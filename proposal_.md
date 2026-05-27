@@ -28,8 +28,6 @@ Name or pseudonym: KaosTse
 Role: PM, accounting, legal
 Status: Part-time
 
-//
-
 # Project Summary
 
 RFP-004 asks for a privacy-preserving DEX on the Logos Execution Zone. LDEX delivers it: a constant-product AMM with a 4-tier fee schedule (0.01 / 0.05 / 0.30 / 1.00 %), atomic deshield → swap → re-shield proven inside a single RISC-Zero STARK, ATA-based public flows, on-chain analytics, and three per-trade privacy modes (Public, PrivateOwned, Disposable account-A) so users choose their own latency/linkability trade-off, including the literal RFP "fresh account per op" model. The already existing codebase is close to feature-complete on a self-hosted L1-backed devnet today, mainly through cli; functional, usability, reliability, performance and privacy requirements in `docs/request.md` were live-verified and mapped in `docs/request_met.md`.
@@ -40,8 +38,6 @@ This proposal packages the two halves as one deliverable because they are one de
 prover without an application is infrastructure looking for users. The combination is a solid end-user-shaped privacy product on LEZ, with the prover layer already engineered for future privacy apps too. The work is mostly hardening and integration: land LDEX on the canonical Logos testnet, harden and enhance LDEX-core, wire the mini-app/CLI, integrate Psychopomp's operator marketplace, build the test framework that protects the UX over time (we used it during this proposal's drafting to find and fix a real shielded-balance display bug), and pay for an audit before mainnet.
 
 LDEX matters because it is the canonical demonstration that LEZ's privacy-preserving transactions are practical for end-user applications, not just primitive transfers. It exercises every part of the stack: privacy circuit, chained-call orchestration, wallet FFI, SPEL, Basecamp module hosting, and the prover. It produces a reusable template for every later privacy app on LEZ. Psychopomp matters because it makes that template viable on real hardware. Funded together, LDEX + Psychopomp ship a powerful, usable privacy-app + prover combination Logos can point at and say: this is what privacy on LEZ feels like.
-
-//
 
 # Technical Approach
 
@@ -204,9 +200,8 @@ $47,000
 # Existing Work
 
 LDEX repository with clear instructions to bootstrap and run the mini-app: https://gitlab.com/paradoxcomputer/ldex-mono
-Psychopomp repository: https://gitlab.com/paradoxcomputer/ldex-mono/-/tree/main/psychopomp
 
-//
+Psychopomp repository: https://gitlab.com/paradoxcomputer/ldex-mono/-/tree/main/psychopomp
 
 # Future Work
 
