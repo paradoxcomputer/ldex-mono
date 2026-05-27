@@ -1,0 +1,593 @@
+{
+  "version": "0.1.0",
+  "name": "amm",
+  "instructions": [
+    {
+      "name": "new_definition",
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "vault_a",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "vault_b",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "pool_definition_lp",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "lp_lock_holding",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "user_holding_a",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "user_holding_b",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "user_holding_lp",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "clock",
+          "writable": false,
+          "signer": false,
+          "init": false
+        }
+      ],
+      "args": [
+        {
+          "name": "token_a_amount",
+          "type": "u128"
+        },
+        {
+          "name": "token_b_amount",
+          "type": "u128"
+        },
+        {
+          "name": "fees",
+          "type": "u128"
+        },
+        {
+          "name": "deadline",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "add_liquidity",
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "vault_a",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "vault_b",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "pool_definition_lp",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "user_holding_a",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "user_holding_b",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "user_holding_lp",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "clock",
+          "writable": false,
+          "signer": false,
+          "init": false
+        }
+      ],
+      "args": [
+        {
+          "name": "min_amount_liquidity",
+          "type": "u128"
+        },
+        {
+          "name": "max_amount_to_add_token_a",
+          "type": "u128"
+        },
+        {
+          "name": "max_amount_to_add_token_b",
+          "type": "u128"
+        },
+        {
+          "name": "deadline",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "remove_liquidity",
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "vault_a",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "vault_b",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "pool_definition_lp",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "user_holding_a",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "user_holding_b",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "user_holding_lp",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "clock",
+          "writable": false,
+          "signer": false,
+          "init": false
+        }
+      ],
+      "args": [
+        {
+          "name": "remove_liquidity_amount",
+          "type": "u128"
+        },
+        {
+          "name": "min_amount_to_remove_token_a",
+          "type": "u128"
+        },
+        {
+          "name": "min_amount_to_remove_token_b",
+          "type": "u128"
+        },
+        {
+          "name": "deadline",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "swap_exact_input",
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "vault_a",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "vault_b",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "user_holding_a",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "user_holding_b",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "clock",
+          "writable": false,
+          "signer": false,
+          "init": false
+        }
+      ],
+      "args": [
+        {
+          "name": "swap_amount_in",
+          "type": "u128"
+        },
+        {
+          "name": "min_amount_out",
+          "type": "u128"
+        },
+        {
+          "name": "token_definition_id_in",
+          "type": "account_id"
+        },
+        {
+          "name": "deadline",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "swap_exact_output",
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "vault_a",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "vault_b",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "user_holding_a",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "user_holding_b",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "clock",
+          "writable": false,
+          "signer": false,
+          "init": false
+        }
+      ],
+      "args": [
+        {
+          "name": "exact_amount_out",
+          "type": "u128"
+        },
+        {
+          "name": "max_amount_in",
+          "type": "u128"
+        },
+        {
+          "name": "token_definition_id_in",
+          "type": "account_id"
+        },
+        {
+          "name": "deadline",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "sync_reserves",
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "vault_a",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "vault_b",
+          "writable": false,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "clock",
+          "writable": false,
+          "signer": false,
+          "init": false
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "PoolDefinition",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "definition_token_a_id",
+            "type": "account_id"
+          },
+          {
+            "name": "definition_token_b_id",
+            "type": "account_id"
+          },
+          {
+            "name": "vault_a_id",
+            "type": "account_id"
+          },
+          {
+            "name": "vault_b_id",
+            "type": "account_id"
+          },
+          {
+            "name": "liquidity_pool_id",
+            "type": "account_id"
+          },
+          {
+            "name": "liquidity_pool_supply",
+            "type": "u128"
+          },
+          {
+            "name": "reserve_a",
+            "type": "u128"
+          },
+          {
+            "name": "reserve_b",
+            "type": "u128"
+          },
+          {
+            "name": "fees",
+            "type": "u128"
+          },
+          {
+            "name": "price_a_cum_last",
+            "type": "u128"
+          },
+          {
+            "name": "price_b_cum_last",
+            "type": "u128"
+          },
+          {
+            "name": "block_ts_last",
+            "type": "i64"
+          },
+          {
+            "name": "obs",
+            "type": {
+              "vec": {
+                "defined": "Observation"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenDefinition",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Fungible",
+            "fields": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "total_supply",
+                "type": "u128"
+              },
+              {
+                "name": "metadata_id",
+                "type": {
+                  "option": "account_id"
+                }
+              }
+            ]
+          },
+          {
+            "name": "NonFungible",
+            "fields": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "printable_supply",
+                "type": "u128"
+              },
+              {
+                "name": "metadata_id",
+                "type": "account_id"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenHolding",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Fungible",
+            "fields": [
+              {
+                "name": "definition_id",
+                "type": "account_id"
+              },
+              {
+                "name": "balance",
+                "type": "u128"
+              }
+            ]
+          },
+          {
+            "name": "NftMaster",
+            "fields": [
+              {
+                "name": "definition_id",
+                "type": "account_id"
+              },
+              {
+                "name": "print_balance",
+                "type": "u128"
+              }
+            ]
+          },
+          {
+            "name": "NftPrintedCopy",
+            "fields": [
+              {
+                "name": "definition_id",
+                "type": "account_id"
+              },
+              {
+                "name": "owned",
+                "type": "bool"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenMetadata",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "definition_id",
+            "type": "account_id"
+          },
+          {
+            "name": "standard",
+            "type": {
+              "defined": "MetadataStandard"
+            }
+          },
+          {
+            "name": "uri",
+            "type": "string"
+          },
+          {
+            "name": "creators",
+            "type": "string"
+          },
+          {
+            "name": "primary_sale_date",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "Observation",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "ts",
+          "type": "u64"
+        },
+        {
+          "name": "cum_a",
+          "type": "u128"
+        },
+        {
+          "name": "cum_b",
+          "type": "u128"
+        }
+      ]
+    },
+    {
+      "name": "MetadataStandard",
+      "kind": "enum",
+      "variants": [
+        {
+          "name": "Simple"
+        },
+        {
+          "name": "Expanded"
+        }
+      ]
+    }
+  ],
+  "instruction_type": "amm_core::Instruction"
+}

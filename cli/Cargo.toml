@@ -1,0 +1,23 @@
+[package]
+name = "ldex-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Command-line client for the LDEX privacy DEX on Logos Execution Zone"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "ldex"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Link against the vendored ldex_amm_ffi cdylib (so this CLI ships
+# the same FFI the mini-app uses — no behavioural drift).
+[build-dependencies]
+
+[profile.release]
+opt-level = 3
+lto = "thin"

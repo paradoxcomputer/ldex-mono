@@ -1,0 +1,12 @@
+[package]
+name = "amm_v2_program"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nssa_core = { workspace = true }
+amm_v2_core = { path = "core" }
+amm_core = { path = "../amm/core" }
+ata_core = { path = "../ata/core" }
+token_core = { path = "../token/core" }
+wlez_core = { path = "../wlez/core" }

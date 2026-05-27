@@ -1,0 +1,38 @@
+# RFP-004 acceptance #2: e2e integration tests vs a standalone LEZ
+# sequencer, in CI, green on the default branch.
+#
+# NOTE: the LDEX tree is intentionally git-free during development; this
+# workflow is the ready-to-activate deliverable. `git init` + push to a
+# host (GitHub) makes it live, at which point "green on default branch"
+# is enforced by the `e2e` job below. The heavy LEZ/RISC-Zero toolchain
+# is assumed cached on the runner (self-hosted) — see scripts/ci-e2e.sh
+# for the exact gates (unit, shim build, IDL drift, standalone-sequencer
+# e2e, qmllint). RISC0_DEV_MODE=1 keeps proofs fast; `nightly-real-proof`
+# does ≥1 real-proof pass.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  e2e:
+    runs-on: [self-hosted, lez]   # runner with the LEZ + risc0 toolchain
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: e2e (unit + shim + IDL drift + standalone-sequencer + qmllint)
+        run: bash scripts/ci-e2e.sh
+
+  nightly-real-proof:
+    if: github.event_name == 'schedule'
+    runs-on: [self-hosted, lez]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: one real-proof private-swap pass (no RISC0_DEV_MODE)
+        run: RISC0_DEV_MODE= bash scripts/ci-e2e.sh
+
+on_schedule_note: "wire `schedule:` cron when the repo is hosted"

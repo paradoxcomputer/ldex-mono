@@ -1,0 +1,24 @@
+[package]
+name = "psychopomp-escrow-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "State machine for the psychopomp-escrow LEZ program. Pure Rust; no nssa coupling."
+
+[dependencies]
+psychopomp-hwclass = { path = "../../crates/psychopomp-hwclass" }
+psychopomp-registry-core = { path = "../psychopomp-registry-core" }
+borsh.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+
+[features]
+default = []
+host = ["dep:nssa_core"]
+
+[dependencies.nssa_core]
+git = "https://github.com/logos-blockchain/logos-execution-zone.git"
+tag = "v0.2.0-rc3"
+features = ["host"]
+optional = true

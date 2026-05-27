@@ -1,0 +1,11 @@
+[package]
+name = "ldex-layer-a"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "layer-a"
+path = "main.rs"
+
+[dependencies]
+serde_json = "1"

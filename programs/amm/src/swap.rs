@@ -1,0 +1,603 @@
+use amm_core::{
+    assert_supported_fee_tier, read_vault_fungible_balances, FEE_BPS_DENOMINATOR, MINIMUM_LIQUIDITY,
+};
+pub use amm_core::{compute_liquidity_token_pda_seed, compute_vault_pda_seed, PoolDefinition};
+use nssa_core::{
+    account::{AccountId, AccountWithMetadata, Data},
+    program::{AccountPostState, ChainedCall},
+};
+
+/// Validates swap setup: checks pool liquidity is ready, vaults match, and reserves are sufficient.
+fn validate_swap_setup(
+    pool: &AccountWithMetadata,
+    vault_a: &AccountWithMetadata,
+    vault_b: &AccountWithMetadata,
+) -> PoolDefinition {
+    let pool_def_data = PoolDefinition::try_from(&pool.account.data)
+        .expect("AMM Program expects a valid Pool Definition Account");
+    assert_supported_fee_tier(pool_def_data.fees);
+
+    assert!(
+        pool_def_data.liquidity_pool_supply >= MINIMUM_LIQUIDITY,
+        "Pool liquidity supply is below minimum liquidity"
+    );
+    assert_eq!(
+        vault_a.account_id, pool_def_data.vault_a_id,
+        "Vault A was not provided"
+    );
+    assert_eq!(
+        vault_b.account_id, pool_def_data.vault_b_id,
+        "Vault B was not provided"
+    );
+
+    let (vault_a_balance, vault_b_balance) =
+        read_vault_fungible_balances("Validate swap setup", vault_a, vault_b);
+
+    assert!(
+        vault_a_balance >= pool_def_data.reserve_a,
+        "Reserve for Token A exceeds vault balance"
+    );
+    assert!(
+        vault_b_balance >= pool_def_data.reserve_b,
+        "Reserve for Token B exceeds vault balance"
+    );
+
+    pool_def_data
+}
+
+/// Creates post-state and returns reserves after swap.
+#[expect(clippy::too_many_arguments, reason = "TODO: Fix later")]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "consistent with codebase style"
+)]
+fn create_swap_post_states(
+    pool: AccountWithMetadata,
+    pool_def_data: PoolDefinition,
+    vault_a: AccountWithMetadata,
+    vault_b: AccountWithMetadata,
+    user_holding_a: AccountWithMetadata,
+    user_holding_b: AccountWithMetadata,
+    deposit_a: u128,
+    withdraw_a: u128,
+    deposit_b: u128,
+    withdraw_b: u128,
+    clock_ts: i64,
+) -> Vec<AccountPostState> {
+    let mut pool_post = pool.account;
+    // On-chain price oracle (§5.11③): accumulate the time-weighted price
+    // that held over [block_ts_last, now] using the **pre-swap** reserves
+    // (Uniswap invariant), then carry the updated accumulator + ring into
+    // the post-state. `oracle_pre` keeps the pre-swap reserves so the
+    // integral uses the correct price for the elapsed interval.
+    let mut oracle_pre = pool_def_data.clone();
+    oracle_pre.oracle_update(clock_ts);
+    let mut pool_post_definition = PoolDefinition {
+        reserve_a: pool_def_data
+            .reserve_a
+            .checked_add(deposit_a)
+            .expect("reserve_a + deposit_a overflows u128")
+            .checked_sub(withdraw_a)
+            .expect("reserve_a + deposit_a - withdraw_a underflows"),
+        reserve_b: pool_def_data
+            .reserve_b
+            .checked_add(deposit_b)
+            .expect("reserve_b + deposit_b overflows u128")
+            .checked_sub(withdraw_b)
+            .expect("reserve_b + deposit_b - withdraw_b underflows"),
+        ..pool_def_data
+    };
+    pool_post_definition.price_a_cum_last = oracle_pre.price_a_cum_last;
+    pool_post_definition.price_b_cum_last = oracle_pre.price_b_cum_last;
+    pool_post_definition.block_ts_last = oracle_pre.block_ts_last;
+    pool_post_definition.obs = oracle_pre.obs;
+
+    // RFP Usability #3 — exact on-chain aggregate volume + LP fee
+    // accumulators. For a token-A-in swap: deposit_a == swap_amount_in,
+    // withdraw_b == swap_amount_out (and deposit_b == withdraw_a == 0);
+    // symmetric for B-in. So `deposit + withdraw` for each side equals
+    // the token throughput in that swap. The fee is taken off the input
+    // side (the deposit) and accrues into reserves (LP-side, V2-style).
+    let fee_a = if deposit_a > 0 {
+        deposit_a - (deposit_a * (FEE_BPS_DENOMINATOR - pool_def_data.fees)
+            / FEE_BPS_DENOMINATOR)
+    } else { 0 };
+    let fee_b = if deposit_b > 0 {
+        deposit_b - (deposit_b * (FEE_BPS_DENOMINATOR - pool_def_data.fees)
+            / FEE_BPS_DENOMINATOR)
+    } else { 0 };
+    pool_post_definition.cum_volume_a = pool_def_data
+        .cum_volume_a.saturating_add(deposit_a).saturating_add(withdraw_a);
+    pool_post_definition.cum_volume_b = pool_def_data
+        .cum_volume_b.saturating_add(deposit_b).saturating_add(withdraw_b);
+    pool_post_definition.cum_fees_a = pool_def_data.cum_fees_a.saturating_add(fee_a);
+    pool_post_definition.cum_fees_b = pool_def_data.cum_fees_b.saturating_add(fee_b);
+
+    pool_post.data = Data::from(&pool_post_definition);
+
+    vec![
+        AccountPostState::new(pool_post),
+        AccountPostState::new(vault_a.account),
+        AccountPostState::new(vault_b.account),
+        AccountPostState::new(user_holding_a.account),
+        AccountPostState::new(user_holding_b.account),
+    ]
+}
+
+#[expect(clippy::too_many_arguments, reason = "TODO: Fix later")]
+#[must_use]
+pub fn swap_exact_input(
+    pool: AccountWithMetadata,
+    vault_a: AccountWithMetadata,
+    vault_b: AccountWithMetadata,
+    user_holding_a: AccountWithMetadata,
+    user_holding_b: AccountWithMetadata,
+    swap_amount_in: u128,
+    min_amount_out: u128,
+    token_in_id: AccountId,
+    clock_ts: i64,
+) -> (Vec<AccountPostState>, Vec<ChainedCall>) {
+    let pool_def_data = validate_swap_setup(&pool, &vault_a, &vault_b);
+
+    let token_program_id = vault_a.account.program_owner;
+    assert_eq!(
+        user_holding_a.account.program_owner, token_program_id,
+        "User Token A holding must be owned by the vault's Token Program"
+    );
+    assert_eq!(
+        user_holding_b.account.program_owner, token_program_id,
+        "User Token B holding must be owned by the vault's Token Program"
+    );
+
+    let (chained_calls, [deposit_a, withdraw_a], [deposit_b, withdraw_b]) =
+        if token_in_id == pool_def_data.definition_token_a_id {
+            let (chained_calls, deposit_a, withdraw_b) = swap_logic(
+                user_holding_a.clone(),
+                vault_a.clone(),
+                vault_b.clone(),
+                user_holding_b.clone(),
+                swap_amount_in,
+                min_amount_out,
+                pool_def_data.fees,
+                pool_def_data.reserve_a,
+                pool_def_data.reserve_b,
+                pool.account_id,
+            );
+
+            (chained_calls, [deposit_a, 0], [0, withdraw_b])
+        } else if token_in_id == pool_def_data.definition_token_b_id {
+            let (chained_calls, deposit_b, withdraw_a) = swap_logic(
+                user_holding_b.clone(),
+                vault_b.clone(),
+                vault_a.clone(),
+                user_holding_a.clone(),
+                swap_amount_in,
+                min_amount_out,
+                pool_def_data.fees,
+                pool_def_data.reserve_b,
+                pool_def_data.reserve_a,
+                pool.account_id,
+            );
+
+            (chained_calls, [0, withdraw_a], [deposit_b, 0])
+        } else {
+            panic!("AccountId is not a token type for the pool");
+        };
+
+    let post_states = create_swap_post_states(
+        pool,
+        pool_def_data,
+        vault_a,
+        vault_b,
+        user_holding_a,
+        user_holding_b,
+        deposit_a,
+        withdraw_a,
+        deposit_b,
+        withdraw_b,
+        clock_ts,
+    );
+
+    (post_states, chained_calls)
+}
+
+/// Identical to `swap_exact_input` except the on-chain TWAP oracle is
+/// **not** updated and the clock account is **not** required.
+///
+/// Why this exists: privacy-preserving transactions commit every
+/// `public_pre_state` into the proof's journal at proof-start time.
+/// `CLOCK_01` advances every block — by the time a CPU-bound real ZK
+/// proof completes (~minutes), many blocks have elapsed and the
+/// sequencer's CURRENT clock value no longer matches what the proof
+/// committed. Verification fails with `InvalidPrivacyPreservingProof`.
+/// Dropping the clock from this chained call entirely (and skipping
+/// the oracle update that would have needed it) removes the drift
+/// surface. Public swaps continue to use `swap_exact_input` and feed
+/// the TWAP normally.
+#[must_use]
+pub fn swap_exact_input_circuit(
+    pool: AccountWithMetadata,
+    vault_a: AccountWithMetadata,
+    vault_b: AccountWithMetadata,
+    user_holding_a: AccountWithMetadata,
+    user_holding_b: AccountWithMetadata,
+    swap_amount_in: u128,
+    min_amount_out: u128,
+    token_in_id: AccountId,
+) -> (Vec<AccountPostState>, Vec<ChainedCall>) {
+    let pool_def_data = validate_swap_setup(&pool, &vault_a, &vault_b);
+
+    let token_program_id = vault_a.account.program_owner;
+    assert_eq!(
+        user_holding_a.account.program_owner, token_program_id,
+        "User Token A holding must be owned by the vault's Token Program"
+    );
+    assert_eq!(
+        user_holding_b.account.program_owner, token_program_id,
+        "User Token B holding must be owned by the vault's Token Program"
+    );
+
+    let (chained_calls, [deposit_a, withdraw_a], [deposit_b, withdraw_b]) =
+        if token_in_id == pool_def_data.definition_token_a_id {
+            let (chained_calls, deposit_a, withdraw_b) = swap_logic(
+                user_holding_a.clone(),
+                vault_a.clone(),
+                vault_b.clone(),
+                user_holding_b.clone(),
+                swap_amount_in,
+                min_amount_out,
+                pool_def_data.fees,
+                pool_def_data.reserve_a,
+                pool_def_data.reserve_b,
+                pool.account_id,
+            );
+
+            (chained_calls, [deposit_a, 0], [0, withdraw_b])
+        } else if token_in_id == pool_def_data.definition_token_b_id {
+            let (chained_calls, deposit_b, withdraw_a) = swap_logic(
+                user_holding_b.clone(),
+                vault_b.clone(),
+                vault_a.clone(),
+                user_holding_a.clone(),
+                swap_amount_in,
+                min_amount_out,
+                pool_def_data.fees,
+                pool_def_data.reserve_b,
+                pool_def_data.reserve_a,
+                pool.account_id,
+            );
+
+            (chained_calls, [0, withdraw_a], [deposit_b, 0])
+        } else {
+            panic!("AccountId is not a token type for the pool");
+        };
+
+    let post_states = create_swap_post_states_no_oracle(
+        pool,
+        pool_def_data,
+        vault_a,
+        vault_b,
+        user_holding_a,
+        user_holding_b,
+        deposit_a,
+        withdraw_a,
+        deposit_b,
+        withdraw_b,
+    );
+
+    (post_states, chained_calls)
+}
+
+/// Same shape + reserve / volume / fee math as `create_swap_post_states`,
+/// minus the oracle update. The pool's `price_a_cum_last`,
+/// `price_b_cum_last`, `block_ts_last`, and `obs` are carried over
+/// unchanged from pre to post (no time-weighted update). All other
+/// fields (reserves, cum_volume, cum_fees) move identically.
+#[expect(clippy::too_many_arguments, reason = "consistent with codebase style")]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "consistent with codebase style"
+)]
+fn create_swap_post_states_no_oracle(
+    pool: AccountWithMetadata,
+    pool_def_data: PoolDefinition,
+    vault_a: AccountWithMetadata,
+    vault_b: AccountWithMetadata,
+    user_holding_a: AccountWithMetadata,
+    user_holding_b: AccountWithMetadata,
+    deposit_a: u128,
+    withdraw_a: u128,
+    deposit_b: u128,
+    withdraw_b: u128,
+) -> Vec<AccountPostState> {
+    let mut pool_post = pool.account;
+    // Note the `..pool_def_data` spread below copies `price_a_cum_last`,
+    // `price_b_cum_last`, `block_ts_last`, `obs`, and other unchanged
+    // fields from pre to post. No oracle update; this is intentional
+    // (see `swap_exact_input_circuit` for rationale).
+    let mut pool_post_definition = PoolDefinition {
+        reserve_a: pool_def_data
+            .reserve_a
+            .checked_add(deposit_a)
+            .expect("reserve_a + deposit_a overflows u128")
+            .checked_sub(withdraw_a)
+            .expect("reserve_a + deposit_a - withdraw_a underflows"),
+        reserve_b: pool_def_data
+            .reserve_b
+            .checked_add(deposit_b)
+            .expect("reserve_b + deposit_b overflows u128")
+            .checked_sub(withdraw_b)
+            .expect("reserve_b + deposit_b - withdraw_b underflows"),
+        ..pool_def_data.clone()
+    };
+
+    // Cumulative volume + fee accumulators (RFP Usability #3) move
+    // identically to the oracle-updating path.
+    let fee_a = if deposit_a > 0 {
+        deposit_a - (deposit_a * (FEE_BPS_DENOMINATOR - pool_def_data.fees) / FEE_BPS_DENOMINATOR)
+    } else {
+        0
+    };
+    let fee_b = if deposit_b > 0 {
+        deposit_b - (deposit_b * (FEE_BPS_DENOMINATOR - pool_def_data.fees) / FEE_BPS_DENOMINATOR)
+    } else {
+        0
+    };
+    pool_post_definition.cum_volume_a = pool_def_data
+        .cum_volume_a
+        .saturating_add(deposit_a)
+        .saturating_add(withdraw_a);
+    pool_post_definition.cum_volume_b = pool_def_data
+        .cum_volume_b
+        .saturating_add(deposit_b)
+        .saturating_add(withdraw_b);
+    pool_post_definition.cum_fees_a = pool_def_data.cum_fees_a.saturating_add(fee_a);
+    pool_post_definition.cum_fees_b = pool_def_data.cum_fees_b.saturating_add(fee_b);
+
+    pool_post.data = Data::from(&pool_post_definition);
+
+    vec![
+        AccountPostState::new(pool_post),
+        AccountPostState::new(vault_a.account),
+        AccountPostState::new(vault_b.account),
+        AccountPostState::new(user_holding_a.account),
+        AccountPostState::new(user_holding_b.account),
+    ]
+}
+
+#[expect(clippy::too_many_arguments, reason = "TODO: Fix later")]
+fn swap_logic(
+    user_deposit: AccountWithMetadata,
+    vault_deposit: AccountWithMetadata,
+    vault_withdraw: AccountWithMetadata,
+    user_withdraw: AccountWithMetadata,
+    swap_amount_in: u128,
+    min_amount_out: u128,
+    fee_bps: u128,
+    reserve_deposit_vault_amount: u128,
+    reserve_withdraw_vault_amount: u128,
+    pool_id: AccountId,
+) -> (Vec<ChainedCall>, u128, u128) {
+    let effective_amount_in = swap_amount_in
+        .checked_mul(FEE_BPS_DENOMINATOR - fee_bps)
+        .expect("swap_amount_in * (FEE_BPS_DENOMINATOR - fee_bps) overflows u128")
+        / FEE_BPS_DENOMINATOR;
+    assert!(
+        effective_amount_in != 0,
+        "Effective swap amount should be nonzero"
+    );
+    // Compute the withdraw amount using the fee-adjusted input for pricing.
+    // The recorded pool reserves are updated later with the full
+    // `swap_amount_in`, so LP fees accrue inside `reserve_*` via invariant
+    // growth rather than as a separate vault balance surplus over `reserve_*`.
+    let withdraw_amount = reserve_withdraw_vault_amount
+        .checked_mul(effective_amount_in)
+        .expect("reserve * effective_amount_in overflows u128")
+        / reserve_deposit_vault_amount
+            .checked_add(effective_amount_in)
+            .expect("reserve + effective_amount_in overflows u128");
+
+    // Slippage check
+    assert!(
+        min_amount_out <= withdraw_amount,
+        "Withdraw amount is less than minimal amount out"
+    );
+    assert!(withdraw_amount != 0, "Withdraw amount should be nonzero");
+
+    let token_program_id = user_deposit.account.program_owner;
+
+    let mut chained_calls = Vec::new();
+    chained_calls.push(ChainedCall::new(
+        token_program_id,
+        vec![user_deposit, vault_deposit],
+        &token_core::Instruction::Transfer {
+            amount_to_transfer: swap_amount_in,
+        },
+    ));
+
+    let mut vault_withdraw = vault_withdraw.clone();
+    vault_withdraw.is_authorized = true;
+
+    let pda_seed = compute_vault_pda_seed(
+        pool_id,
+        token_core::TokenHolding::try_from(&vault_withdraw.account.data)
+            .expect("Swap Logic: AMM Program expects valid token data")
+            .definition_id(),
+    );
+
+    chained_calls.push(
+        ChainedCall::new(
+            token_program_id,
+            vec![vault_withdraw, user_withdraw],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: withdraw_amount,
+            },
+        )
+        .with_pda_seeds(vec![pda_seed]),
+    );
+
+    (chained_calls, swap_amount_in, withdraw_amount)
+}
+
+#[expect(clippy::too_many_arguments, reason = "TODO: Fix later")]
+#[must_use]
+pub fn swap_exact_output(
+    pool: AccountWithMetadata,
+    vault_a: AccountWithMetadata,
+    vault_b: AccountWithMetadata,
+    user_holding_a: AccountWithMetadata,
+    user_holding_b: AccountWithMetadata,
+    exact_amount_out: u128,
+    max_amount_in: u128,
+    token_in_id: AccountId,
+    clock_ts: i64,
+) -> (Vec<AccountPostState>, Vec<ChainedCall>) {
+    let pool_def_data = validate_swap_setup(&pool, &vault_a, &vault_b);
+
+    let token_program_id = vault_a.account.program_owner;
+    assert_eq!(
+        user_holding_a.account.program_owner, token_program_id,
+        "User Token A holding must be owned by the vault's Token Program"
+    );
+    assert_eq!(
+        user_holding_b.account.program_owner, token_program_id,
+        "User Token B holding must be owned by the vault's Token Program"
+    );
+
+    let (chained_calls, [deposit_a, withdraw_a], [deposit_b, withdraw_b]) =
+        if token_in_id == pool_def_data.definition_token_a_id {
+            let (chained_calls, deposit_a, withdraw_b) = exact_output_swap_logic(
+                user_holding_a.clone(),
+                vault_a.clone(),
+                vault_b.clone(),
+                user_holding_b.clone(),
+                exact_amount_out,
+                max_amount_in,
+                pool_def_data.reserve_a,
+                pool_def_data.reserve_b,
+                pool_def_data.fees,
+                pool.account_id,
+            );
+
+            (chained_calls, [deposit_a, 0], [0, withdraw_b])
+        } else if token_in_id == pool_def_data.definition_token_b_id {
+            let (chained_calls, deposit_b, withdraw_a) = exact_output_swap_logic(
+                user_holding_b.clone(),
+                vault_b.clone(),
+                vault_a.clone(),
+                user_holding_a.clone(),
+                exact_amount_out,
+                max_amount_in,
+                pool_def_data.reserve_b,
+                pool_def_data.reserve_a,
+                pool_def_data.fees,
+                pool.account_id,
+            );
+
+            (chained_calls, [0, withdraw_a], [deposit_b, 0])
+        } else {
+            panic!("AccountId is not a token type for the pool");
+        };
+
+    let post_states = create_swap_post_states(
+        pool,
+        pool_def_data,
+        vault_a,
+        vault_b,
+        user_holding_a,
+        user_holding_b,
+        deposit_a,
+        withdraw_a,
+        deposit_b,
+        withdraw_b,
+        clock_ts,
+    );
+
+    (post_states, chained_calls)
+}
+
+#[expect(clippy::too_many_arguments, reason = "TODO: Fix later")]
+fn exact_output_swap_logic(
+    user_deposit: AccountWithMetadata,
+    vault_deposit: AccountWithMetadata,
+    vault_withdraw: AccountWithMetadata,
+    user_withdraw: AccountWithMetadata,
+    exact_amount_out: u128,
+    max_amount_in: u128,
+    reserve_deposit_vault_amount: u128,
+    reserve_withdraw_vault_amount: u128,
+    fee_bps: u128,
+    pool_id: AccountId,
+) -> (Vec<ChainedCall>, u128, u128) {
+    // Guard: exact_amount_out must be nonzero
+    assert_ne!(exact_amount_out, 0, "Exact amount out must be nonzero");
+
+    // Guard: exact_amount_out must be less than reserve_withdraw_vault_amount
+    assert!(
+        exact_amount_out < reserve_withdraw_vault_amount,
+        "Exact amount out exceeds reserve"
+    );
+
+    // Compute the minimum effective input required to achieve exact_amount_out
+    // using the same floor-rounded fee application as swap_exact_input.
+    //
+    // Solve constant product for effective_in (fee already removed):
+    //   effective_in >= ceil(reserve_in * amount_out / (reserve_out - amount_out))
+    let effective_in_numerator = reserve_deposit_vault_amount
+        .checked_mul(exact_amount_out)
+        .expect("reserve * amount_out overflows u128");
+    let effective_in_denominator = reserve_withdraw_vault_amount
+        .checked_sub(exact_amount_out)
+        .expect("reserve_out - amount_out underflows");
+    let effective_in_min = effective_in_numerator.div_ceil(effective_in_denominator);
+
+    // Lift back to gross input so that
+    //   floor(gross_in * (FEE_DENOM - fee) / FEE_DENOM) >= effective_in_min
+    let fee_multiplier = FEE_BPS_DENOMINATOR
+        .checked_sub(fee_bps)
+        .expect("fee_bps exceeds fee denominator");
+    let deposit_amount = effective_in_min
+        .checked_mul(FEE_BPS_DENOMINATOR)
+        .expect("effective_in * FEE_DENOM overflows u128")
+        .div_ceil(fee_multiplier);
+
+    // Slippage check
+    assert!(
+        deposit_amount <= max_amount_in,
+        "Required input exceeds maximum amount in"
+    );
+
+    let token_program_id = user_deposit.account.program_owner;
+
+    let mut chained_calls = Vec::new();
+    chained_calls.push(ChainedCall::new(
+        token_program_id,
+        vec![user_deposit, vault_deposit],
+        &token_core::Instruction::Transfer {
+            amount_to_transfer: deposit_amount,
+        },
+    ));
+
+    let mut vault_withdraw = vault_withdraw;
+    vault_withdraw.is_authorized = true;
+
+    let pda_seed = compute_vault_pda_seed(
+        pool_id,
+        token_core::TokenHolding::try_from(&vault_withdraw.account.data)
+            .expect("Exact Output Swap Logic: AMM Program expects valid token data")
+            .definition_id(),
+    );
+
+    chained_calls.push(
+        ChainedCall::new(
+            token_program_id,
+            vec![vault_withdraw, user_withdraw],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: exact_amount_out,
+            },
+        )
+        .with_pda_seeds(vec![pda_seed]),
+    );
+
+    (chained_calls, deposit_amount, exact_amount_out)
+}

@@ -1,0 +1,65 @@
+[workspace]
+members = [
+    "token/core",
+    "token",
+    "token/methods",
+    "amm/core",
+    "amm",
+    "amm/methods",
+    "amm_v2/core",
+    "amm_v2",
+    "amm_v2/methods",
+    "private_swap_router/core",
+    "private_swap_router",
+    "private_swap_router/methods",
+    "ata/core",
+    "ata",
+    "ata/methods",
+    "stablecoin/core",
+    "stablecoin",
+    "stablecoin/methods",
+    "wlez/core",
+    "wlez",
+    "wlez/methods",
+    "integration_tests",
+    "tools/idl-gen",
+]
+exclude = [
+    "token/methods/guest",
+    "amm/methods/guest",
+    "amm_v2/methods/guest",
+    "private_swap_router/methods/guest",
+    "ata/methods/guest",
+    "stablecoin/methods/guest",
+    "wlez/methods/guest",
+]
+resolver = "2"
+
+[workspace.dependencies]
+nssa_core = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.2.0-rc3", features = ["host"] }
+nssa = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.2.0-rc3", features = ["test-utils"] }
+token_core = { path = "token/core" }
+token_program = { path = "token" }
+amm_core = { path = "amm/core" }
+amm_program = { path = "amm" }
+ata_core = { path = "ata/core" }
+ata_program = { path = "ata" }
+stablecoin_core = { path = "stablecoin/core" }
+stablecoin_program = { path = "stablecoin" }
+serde = { version = "1.0", features = ["derive"] }
+borsh = { version = "1.0", features = ["derive"] }
+risc0-zkvm = { version = "=3.0.5" }
+serde_json = "1.0"
+tokio = { version = "1.28.2", features = ["net", "rt-multi-thread", "sync", "macros"] }
+
+# Override the nssa git dependency with the local checkout so the
+# composite-receipt change in `lez/nssa/src/privacy_preserving_transaction/
+# circuit.rs` (succinct → composite, ~2-3× faster STARK proof gen) takes
+# effect in LDEX builds. Both nssa and nssa_core must be patched together
+# to keep the dep graph consistent — patching only one causes two
+# versions of nssa_core to coexist and the build fails.
+[patch."https://github.com/logos-blockchain/logos-execution-zone.git"]
+# Path-relative to a `_lez` symlink that `setup.sh` creates at the repo
+# root, pointing at the user's LEZ checkout. See SETUP.md.
+nssa = { path = "../_lez/nssa" }
+nssa_core = { path = "../_lez/nssa/core" }

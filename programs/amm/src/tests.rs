@@ -1,0 +1,3815 @@
+#![cfg(test)]
+
+use std::num::NonZero;
+
+use amm_core::{
+    compute_liquidity_token_pda, compute_liquidity_token_pda_seed, compute_lp_lock_holding_pda,
+    compute_lp_lock_holding_pda_seed, compute_pool_pda, compute_pool_pda_seed, compute_vault_pda,
+    compute_vault_pda_seed, PoolDefinition, FEE_BPS_DENOMINATOR, FEE_TIER_BPS_1, FEE_TIER_BPS_100,
+    FEE_TIER_BPS_30, FEE_TIER_BPS_5, MINIMUM_LIQUIDITY,
+};
+use nssa_core::{
+    account::{Account, AccountId, AccountWithMetadata, Data, Nonce},
+    program::{ChainedCall, Claim, ProgramId},
+};
+use token_core::{TokenDefinition, TokenHolding};
+
+use crate::{
+    add::add_liquidity,
+    new_definition::new_definition,
+    remove::remove_liquidity,
+    swap::{swap_exact_input, swap_exact_output},
+    sync::sync_reserves,
+};
+
+const TOKEN_PROGRAM_ID: ProgramId = [15; 8];
+const AMM_PROGRAM_ID: ProgramId = [42; 8];
+const MALICIOUS_TOKEN_PROGRAM_ID: ProgramId = [99; 8];
+
+struct BalanceForTests;
+struct ChainedCallForTests;
+struct IdForTests;
+struct AccountWithMetadataForTests;
+type AccountForTests = AccountWithMetadataForTests;
+
+impl BalanceForTests {
+    fn fee_tier() -> u128 {
+        FEE_TIER_BPS_30
+    }
+
+    fn vault_a_reserve_init() -> u128 {
+        5_000
+    }
+
+    fn vault_b_reserve_init() -> u128 {
+        2_500
+    }
+
+    fn vault_a_reserve_low() -> u128 {
+        10
+    }
+
+    fn vault_b_reserve_low() -> u128 {
+        10
+    }
+
+    fn vault_a_reserve_high() -> u128 {
+        500_000
+    }
+
+    fn vault_b_reserve_high() -> u128 {
+        500_000
+    }
+
+    fn user_token_a_balance() -> u128 {
+        10_000
+    }
+
+    fn user_token_b_balance() -> u128 {
+        10_000
+    }
+
+    fn user_token_lp_balance() -> u128 {
+        100
+    }
+
+    fn remove_min_amount_a() -> u128 {
+        50
+    }
+
+    fn remove_min_amount_b() -> u128 {
+        100
+    }
+
+    fn remove_actual_a_successful() -> u128 {
+        141
+    }
+
+    fn remove_min_amount_b_low() -> u128 {
+        50
+    }
+
+    fn remove_amount_lp() -> u128 {
+        100
+    }
+
+    fn remove_amount_lp_1() -> u128 {
+        30
+    }
+
+    fn add_max_amount_a() -> u128 {
+        500
+    }
+
+    fn add_max_amount_b() -> u128 {
+        200
+    }
+
+    fn effective_swap_in_a() -> u128 {
+        BalanceForTests::add_max_amount_a() * (FEE_BPS_DENOMINATOR - BalanceForTests::fee_tier())
+            / FEE_BPS_DENOMINATOR
+    }
+
+    fn effective_swap_in_b() -> u128 {
+        BalanceForTests::add_max_amount_b() * (FEE_BPS_DENOMINATOR - BalanceForTests::fee_tier())
+            / FEE_BPS_DENOMINATOR
+    }
+
+    fn add_max_amount_a_low() -> u128 {
+        10
+    }
+
+    fn add_max_amount_b_low() -> u128 {
+        10
+    }
+
+    fn add_min_amount_lp() -> u128 {
+        20
+    }
+
+    fn lp_supply_init() -> u128 {
+        // sqrt(vault_a_reserve_init * vault_b_reserve_init) = sqrt(5000 * 2500) = 3535
+        (BalanceForTests::vault_a_reserve_init() * BalanceForTests::vault_b_reserve_init()).isqrt()
+    }
+
+    fn lp_user_init() -> u128 {
+        BalanceForTests::lp_supply_init() - MINIMUM_LIQUIDITY
+    }
+
+    fn vault_a_swap_test_1() -> u128 {
+        BalanceForTests::vault_a_reserve_init() + BalanceForTests::add_max_amount_a()
+    }
+
+    fn vault_a_swap_test_2() -> u128 {
+        BalanceForTests::vault_a_reserve_init() - BalanceForTests::swap_amount_out_a()
+    }
+
+    fn vault_b_swap_test_1() -> u128 {
+        BalanceForTests::vault_b_reserve_init() - BalanceForTests::swap_amount_out_b()
+    }
+
+    fn vault_b_swap_test_2() -> u128 {
+        BalanceForTests::vault_b_reserve_init() + BalanceForTests::add_max_amount_b()
+    }
+
+    fn min_amount_out() -> u128 {
+        200
+    }
+
+    fn min_amount_out_too_high() -> u128 {
+        BalanceForTests::swap_amount_out_b() + 1
+    }
+
+    fn vault_a_add_successful() -> u128 {
+        BalanceForTests::vault_a_reserve_init() + BalanceForTests::add_successful_amount_a()
+    }
+
+    fn vault_b_add_successful() -> u128 {
+        BalanceForTests::vault_b_reserve_init() + BalanceForTests::add_successful_amount_b()
+    }
+
+    fn add_successful_amount_a() -> u128 {
+        (BalanceForTests::vault_a_reserve_init() * BalanceForTests::add_max_amount_b())
+            / BalanceForTests::vault_b_reserve_init()
+    }
+
+    fn add_successful_amount_b() -> u128 {
+        BalanceForTests::add_max_amount_b()
+    }
+
+    fn max_amount_in() -> u128 {
+        166
+    }
+
+    fn vault_a_remove_successful() -> u128 {
+        BalanceForTests::vault_a_reserve_init() - BalanceForTests::remove_actual_a_successful()
+    }
+
+    fn vault_b_remove_successful() -> u128 {
+        BalanceForTests::vault_b_reserve_init() - BalanceForTests::remove_actual_b_successful()
+    }
+
+    fn swap_amount_out_b() -> u128 {
+        (BalanceForTests::vault_b_reserve_init() * BalanceForTests::effective_swap_in_a())
+            / (BalanceForTests::vault_a_reserve_init() + BalanceForTests::effective_swap_in_a())
+    }
+
+    fn swap_amount_out_a() -> u128 {
+        (BalanceForTests::vault_a_reserve_init() * BalanceForTests::effective_swap_in_b())
+            / (BalanceForTests::vault_b_reserve_init() + BalanceForTests::effective_swap_in_b())
+    }
+
+    fn add_delta_lp_successful() -> u128 {
+        std::cmp::min(
+            BalanceForTests::lp_supply_init() * BalanceForTests::add_successful_amount_a()
+                / BalanceForTests::vault_a_reserve_init(),
+            BalanceForTests::lp_supply_init() * BalanceForTests::add_successful_amount_b()
+                / BalanceForTests::vault_b_reserve_init(),
+        )
+    }
+
+    fn remove_actual_b_successful() -> u128 {
+        (BalanceForTests::vault_b_reserve_init() * BalanceForTests::remove_amount_lp())
+            / BalanceForTests::lp_supply_init()
+    }
+
+    fn add_lp_supply_successful() -> u128 {
+        BalanceForTests::lp_supply_init() + BalanceForTests::add_delta_lp_successful()
+    }
+
+    fn remove_lp_supply_successful() -> u128 {
+        BalanceForTests::lp_supply_init() - BalanceForTests::remove_amount_lp()
+    }
+}
+
+impl ChainedCallForTests {
+    fn cc_swap_token_a_test_1() -> ChainedCall {
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![
+                AccountWithMetadataForTests::user_holding_a(),
+                AccountWithMetadataForTests::vault_a_init(),
+            ],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: BalanceForTests::add_max_amount_a(),
+            },
+        )
+    }
+
+    fn cc_swap_token_b_test_1() -> ChainedCall {
+        let swap_amount = BalanceForTests::swap_amount_out_b();
+
+        let mut vault_b_auth = AccountWithMetadataForTests::vault_b_init();
+        vault_b_auth.is_authorized = true;
+
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![vault_b_auth, AccountWithMetadataForTests::user_holding_b()],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: swap_amount,
+            },
+        )
+        .with_pda_seeds(vec![compute_vault_pda_seed(
+            IdForTests::pool_definition_id(),
+            IdForTests::token_b_definition_id(),
+        )])
+    }
+
+    fn cc_swap_token_a_test_2() -> ChainedCall {
+        let swap_amount = BalanceForTests::swap_amount_out_a();
+
+        let mut vault_a_auth = AccountWithMetadataForTests::vault_a_init();
+        vault_a_auth.is_authorized = true;
+
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![vault_a_auth, AccountWithMetadataForTests::user_holding_a()],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: swap_amount,
+            },
+        )
+        .with_pda_seeds(vec![compute_vault_pda_seed(
+            IdForTests::pool_definition_id(),
+            IdForTests::token_a_definition_id(),
+        )])
+    }
+
+    fn cc_swap_token_b_test_2() -> ChainedCall {
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![
+                AccountWithMetadataForTests::user_holding_b(),
+                AccountWithMetadataForTests::vault_b_init(),
+            ],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: BalanceForTests::add_max_amount_b(),
+            },
+        )
+    }
+
+    fn cc_swap_exact_output_token_a_test_1() -> ChainedCall {
+        // reserve_in=1000, amount_out=166, fee=30bps
+        // required_effective_in = ceil(1000 * 166 / 334) = 498
+        // deposit = ceil(498 * 10000 / 9970) = 500
+        let swap_amount: u128 = 500;
+
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![
+                AccountWithMetadataForTests::user_holding_a(),
+                AccountWithMetadataForTests::vault_a_init(),
+            ],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: swap_amount,
+            },
+        )
+    }
+
+    fn cc_swap_exact_output_token_b_test_1() -> ChainedCall {
+        let swap_amount: u128 = 166;
+
+        let mut vault_b_auth = AccountWithMetadataForTests::vault_b_init();
+        vault_b_auth.is_authorized = true;
+
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![vault_b_auth, AccountWithMetadataForTests::user_holding_b()],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: swap_amount,
+            },
+        )
+        .with_pda_seeds(vec![compute_vault_pda_seed(
+            IdForTests::pool_definition_id(),
+            IdForTests::token_b_definition_id(),
+        )])
+    }
+
+    fn cc_swap_exact_output_token_a_test_2() -> ChainedCall {
+        let swap_amount: u128 = 285;
+
+        let mut vault_a_auth = AccountWithMetadataForTests::vault_a_init();
+        vault_a_auth.is_authorized = true;
+
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![vault_a_auth, AccountWithMetadataForTests::user_holding_a()],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: swap_amount,
+            },
+        )
+        .with_pda_seeds(vec![compute_vault_pda_seed(
+            IdForTests::pool_definition_id(),
+            IdForTests::token_a_definition_id(),
+        )])
+    }
+
+    fn cc_swap_exact_output_token_b_test_2() -> ChainedCall {
+        // reserve_in=500, amount_out=285, fee=30bps
+        // required_effective_in = ceil(500 * 285 / 715) = 200
+        // deposit = ceil(200 * 10000 / 9970) = 201
+        let swap_amount: u128 = 201;
+
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![
+                AccountWithMetadataForTests::user_holding_b(),
+                AccountWithMetadataForTests::vault_b_init(),
+            ],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: swap_amount,
+            },
+        )
+    }
+
+    fn cc_swap_rounding_boundary_token_a_in() -> ChainedCall {
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![
+                AccountWithMetadataForTests::user_holding_a(),
+                AccountWithMetadataForTests::vault_a_init(),
+            ],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: 3,
+            },
+        )
+    }
+
+    fn cc_swap_rounding_boundary_token_b_out() -> ChainedCall {
+        let mut vault_b_auth = AccountWithMetadataForTests::vault_b_init();
+        vault_b_auth.is_authorized = true;
+
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![vault_b_auth, AccountWithMetadataForTests::user_holding_b()],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: 1,
+            },
+        )
+        .with_pda_seeds(vec![compute_vault_pda_seed(
+            IdForTests::pool_definition_id(),
+            IdForTests::token_b_definition_id(),
+        )])
+    }
+
+    fn cc_add_token_a() -> ChainedCall {
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![
+                AccountWithMetadataForTests::user_holding_a(),
+                AccountWithMetadataForTests::vault_a_init(),
+            ],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: BalanceForTests::add_successful_amount_a(),
+            },
+        )
+    }
+
+    fn cc_add_token_b() -> ChainedCall {
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![
+                AccountWithMetadataForTests::user_holding_b(),
+                AccountWithMetadataForTests::vault_b_init(),
+            ],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: BalanceForTests::add_successful_amount_b(),
+            },
+        )
+    }
+
+    fn cc_add_pool_lp() -> ChainedCall {
+        let mut pool_lp_auth = AccountWithMetadataForTests::pool_lp_init();
+        pool_lp_auth.is_authorized = true;
+
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![
+                pool_lp_auth,
+                AccountWithMetadataForTests::user_holding_lp_init(),
+            ],
+            &token_core::Instruction::Mint {
+                amount_to_mint: BalanceForTests::add_delta_lp_successful(),
+            },
+        )
+        .with_pda_seeds(vec![compute_liquidity_token_pda_seed(
+            IdForTests::pool_definition_id(),
+        )])
+    }
+
+    fn cc_remove_token_a() -> ChainedCall {
+        let mut vault_a_auth = AccountWithMetadataForTests::vault_a_init();
+        vault_a_auth.is_authorized = true;
+
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![vault_a_auth, AccountWithMetadataForTests::user_holding_a()],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: BalanceForTests::remove_actual_a_successful(),
+            },
+        )
+        .with_pda_seeds(vec![compute_vault_pda_seed(
+            IdForTests::pool_definition_id(),
+            IdForTests::token_a_definition_id(),
+        )])
+    }
+
+    fn cc_remove_token_b() -> ChainedCall {
+        let mut vault_b_auth = AccountWithMetadataForTests::vault_b_init();
+        vault_b_auth.is_authorized = true;
+
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![vault_b_auth, AccountWithMetadataForTests::user_holding_b()],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: BalanceForTests::remove_actual_b_successful(),
+            },
+        )
+        .with_pda_seeds(vec![compute_vault_pda_seed(
+            IdForTests::pool_definition_id(),
+            IdForTests::token_b_definition_id(),
+        )])
+    }
+
+    fn cc_remove_pool_lp() -> ChainedCall {
+        let mut pool_lp_auth = AccountWithMetadataForTests::pool_lp_init();
+        pool_lp_auth.is_authorized = true;
+
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![
+                pool_lp_auth,
+                AccountWithMetadataForTests::user_holding_lp_init(),
+            ],
+            &token_core::Instruction::Burn {
+                amount_to_burn: BalanceForTests::remove_amount_lp(),
+            },
+        )
+        .with_pda_seeds(vec![compute_liquidity_token_pda_seed(
+            IdForTests::pool_definition_id(),
+        )])
+    }
+
+    fn cc_new_definition_token_a() -> ChainedCall {
+        let mut vault_a_auth = AccountWithMetadataForTests::vault_a_init();
+        vault_a_auth.is_authorized = true;
+
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![AccountWithMetadataForTests::user_holding_a(), vault_a_auth],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: BalanceForTests::vault_a_reserve_init(),
+            },
+        )
+        .with_pda_seeds(vec![compute_vault_pda_seed(
+            IdForTests::pool_definition_id(),
+            IdForTests::token_a_definition_id(),
+        )])
+    }
+
+    fn cc_new_definition_token_b() -> ChainedCall {
+        let mut vault_b_auth = AccountWithMetadataForTests::vault_b_init();
+        vault_b_auth.is_authorized = true;
+
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![AccountWithMetadataForTests::user_holding_b(), vault_b_auth],
+            &token_core::Instruction::Transfer {
+                amount_to_transfer: BalanceForTests::vault_b_reserve_init(),
+            },
+        )
+        .with_pda_seeds(vec![compute_vault_pda_seed(
+            IdForTests::pool_definition_id(),
+            IdForTests::token_b_definition_id(),
+        )])
+    }
+
+    fn cc_new_definition_token_lp_lock() -> ChainedCall {
+        let mut pool_lp_auth = AccountForTests::pool_lp_uninit();
+        pool_lp_auth.is_authorized = true;
+        let mut lp_lock_holding_auth = AccountForTests::lp_lock_holding_uninit();
+        lp_lock_holding_auth.is_authorized = true;
+
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![pool_lp_auth, lp_lock_holding_auth],
+            &token_core::Instruction::NewFungibleDefinition {
+                name: String::from("LP Token"),
+                total_supply: MINIMUM_LIQUIDITY,
+            },
+        )
+        .with_pda_seeds(vec![
+            compute_liquidity_token_pda_seed(IdForTests::pool_definition_id()),
+            compute_lp_lock_holding_pda_seed(IdForTests::pool_definition_id()),
+        ])
+    }
+
+    fn cc_new_definition_token_lp_user() -> ChainedCall {
+        ChainedCall::new(
+            TOKEN_PROGRAM_ID,
+            vec![
+                AccountForTests::pool_lp_created_after_lock(),
+                AccountForTests::user_holding_lp_uninit(),
+            ],
+            &token_core::Instruction::Mint {
+                amount_to_mint: BalanceForTests::lp_user_init(),
+            },
+        )
+        .with_pda_seeds(vec![compute_liquidity_token_pda_seed(
+            IdForTests::pool_definition_id(),
+        )])
+    }
+}
+
+impl IdForTests {
+    fn token_a_definition_id() -> AccountId {
+        AccountId::new([42; 32])
+    }
+
+    fn token_b_definition_id() -> AccountId {
+        AccountId::new([43; 32])
+    }
+
+    fn token_lp_definition_id() -> AccountId {
+        compute_liquidity_token_pda(AMM_PROGRAM_ID, IdForTests::pool_definition_id())
+    }
+
+    fn lp_lock_holding_id() -> AccountId {
+        compute_lp_lock_holding_pda(AMM_PROGRAM_ID, IdForTests::pool_definition_id())
+    }
+
+    fn user_token_a_id() -> AccountId {
+        AccountId::new([45; 32])
+    }
+
+    fn user_token_b_id() -> AccountId {
+        AccountId::new([46; 32])
+    }
+
+    fn user_token_lp_id() -> AccountId {
+        AccountId::new([47; 32])
+    }
+
+    fn pool_definition_id() -> AccountId {
+        compute_pool_pda(
+            AMM_PROGRAM_ID,
+            IdForTests::token_a_definition_id(),
+            IdForTests::token_b_definition_id(),
+            FEE_TIER_BPS_30,
+        )
+    }
+
+    fn vault_a_id() -> AccountId {
+        compute_vault_pda(
+            AMM_PROGRAM_ID,
+            IdForTests::pool_definition_id(),
+            IdForTests::token_a_definition_id(),
+        )
+    }
+
+    fn vault_b_id() -> AccountId {
+        compute_vault_pda(
+            AMM_PROGRAM_ID,
+            IdForTests::pool_definition_id(),
+            IdForTests::token_b_definition_id(),
+        )
+    }
+}
+
+impl AccountWithMetadataForTests {
+    fn user_holding_a() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_a_definition_id(),
+                    balance: BalanceForTests::user_token_a_balance(),
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::user_token_a_id(),
+        }
+    }
+
+    fn user_holding_b() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_b_definition_id(),
+                    balance: BalanceForTests::user_token_b_balance(),
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::user_token_b_id(),
+        }
+    }
+
+    fn vault_a_init() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_a_definition_id(),
+                    balance: BalanceForTests::vault_a_reserve_init(),
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::vault_a_id(),
+        }
+    }
+
+    fn vault_b_init() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_b_definition_id(),
+                    balance: BalanceForTests::vault_b_reserve_init(),
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::vault_b_id(),
+        }
+    }
+
+    fn vault_a_init_high() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_a_definition_id(),
+                    balance: BalanceForTests::vault_a_reserve_high(),
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::vault_a_id(),
+        }
+    }
+
+    fn vault_b_init_high() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_b_definition_id(),
+                    balance: BalanceForTests::vault_b_reserve_high(),
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::vault_b_id(),
+        }
+    }
+
+    fn vault_a_init_low() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_a_definition_id(),
+                    balance: BalanceForTests::vault_a_reserve_low(),
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::vault_a_id(),
+        }
+    }
+
+    fn vault_b_init_low() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_b_definition_id(),
+                    balance: BalanceForTests::vault_b_reserve_low(),
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::vault_b_id(),
+        }
+    }
+
+    fn vault_a_init_zero() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_a_definition_id(),
+                    balance: 0,
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::vault_a_id(),
+        }
+    }
+
+    fn vault_b_init_zero() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_b_definition_id(),
+                    balance: 0,
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::vault_b_id(),
+        }
+    }
+
+    fn pool_lp_init() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenDefinition::Fungible {
+                    name: String::from("test"),
+                    total_supply: BalanceForTests::lp_supply_init(),
+                    metadata_id: None,
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::token_lp_definition_id(),
+        }
+    }
+
+    fn pool_lp_uninit() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account::default(),
+            is_authorized: true,
+            account_id: IdForTests::token_lp_definition_id(),
+        }
+    }
+
+    fn pool_lp_created_after_lock() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenDefinition::Fungible {
+                    name: String::from("LP Token"),
+                    total_supply: MINIMUM_LIQUIDITY,
+                    metadata_id: None,
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::token_lp_definition_id(),
+        }
+    }
+
+    fn pool_lp_with_wrong_id() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenDefinition::Fungible {
+                    name: String::from("test"),
+                    total_supply: BalanceForTests::lp_supply_init(),
+                    metadata_id: None,
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::vault_a_id(),
+        }
+    }
+
+    fn user_holding_lp_uninit() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_lp_definition_id(),
+                    balance: 0,
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::user_token_lp_id(),
+        }
+    }
+
+    fn user_holding_lp_init() -> AccountWithMetadata {
+        AccountForTests::user_holding_lp_with_balance(BalanceForTests::user_token_lp_balance())
+    }
+
+    fn user_holding_lp_with_balance(balance: u128) -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_lp_definition_id(),
+                    balance,
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::user_token_lp_id(),
+        }
+    }
+
+    fn lp_lock_holding_uninit() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account::default(),
+            is_authorized: false,
+            account_id: IdForTests::lp_lock_holding_id(),
+        }
+    }
+
+    fn lp_lock_holding_with_wrong_id() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account::default(),
+            is_authorized: false,
+            account_id: IdForTests::vault_a_id(),
+        }
+    }
+
+    fn pool_definition_init() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: BalanceForTests::lp_supply_init(),
+                    reserve_a: BalanceForTests::vault_a_reserve_init(),
+                    reserve_b: BalanceForTests::vault_b_reserve_init(),
+                    fees: BalanceForTests::fee_tier(), ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_uninit() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account::default(),
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    /// A smaller pool (reserve_a=1_000, reserve_b=500) used exclusively by
+    /// swap-exact-output tests, whose hardcoded expected values were computed
+    /// against these reserves.  vault_a_init/vault_b_init still satisfy the
+    /// balance ≥ reserve check (5_000 ≥ 1_000, 2_500 ≥ 500).
+    fn pool_definition_swap_exact_output_init() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: BalanceForTests::lp_supply_init(),
+                    reserve_a: 1_000,
+                    reserve_b: 500,
+                    fees: BalanceForTests::fee_tier(), ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_swap_rounding_boundary_init() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: MINIMUM_LIQUIDITY,
+                    reserve_a: 1_000,
+                    reserve_b: 1_000,
+                    fees: FEE_TIER_BPS_30, ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_init_reserve_a_zero() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: BalanceForTests::lp_supply_init(),
+                    reserve_a: 0,
+                    reserve_b: BalanceForTests::vault_b_reserve_init(),
+                    fees: BalanceForTests::fee_tier(), ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_init_reserve_b_zero() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: BalanceForTests::lp_supply_init(),
+                    reserve_a: BalanceForTests::vault_a_reserve_init(),
+                    reserve_b: 0,
+                    fees: BalanceForTests::fee_tier(), ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_init_reserve_a_low() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: BalanceForTests::vault_a_reserve_low(),
+                    reserve_a: BalanceForTests::vault_a_reserve_low(),
+                    reserve_b: BalanceForTests::vault_b_reserve_high(),
+                    fees: BalanceForTests::fee_tier(), ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_init_reserve_b_low() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: BalanceForTests::vault_a_reserve_high(),
+                    reserve_a: BalanceForTests::vault_a_reserve_high(),
+                    reserve_b: BalanceForTests::vault_b_reserve_low(),
+                    fees: BalanceForTests::fee_tier(), ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_swap_test_1() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: BalanceForTests::lp_supply_init(),
+                    reserve_a: BalanceForTests::vault_a_swap_test_1(),
+                    reserve_b: BalanceForTests::vault_b_swap_test_1(),
+                    fees: BalanceForTests::fee_tier(),
+                    // RFP Usability #3 — on-chain aggregate accumulators
+                    // (amm/src/swap.rs::create_swap_post_states). A→B swap
+                    // of `add_max_amount_a` tokens: cum_volume_a is the
+                    // gross input; cum_volume_b is the output; fee taken
+                    // on the input side equals `add_max_amount_a -
+                    // effective_swap_in_a`.
+                    cum_volume_a: BalanceForTests::add_max_amount_a(),
+                    cum_volume_b: BalanceForTests::swap_amount_out_b(),
+                    cum_fees_a: BalanceForTests::add_max_amount_a()
+                        - BalanceForTests::effective_swap_in_a(),
+                    cum_fees_b: 0,
+                    ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_swap_test_2() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: BalanceForTests::lp_supply_init(),
+                    reserve_a: BalanceForTests::vault_a_swap_test_2(),
+                    reserve_b: BalanceForTests::vault_b_swap_test_2(),
+                    fees: BalanceForTests::fee_tier(),
+                    // Symmetric B→A swap of `add_max_amount_b`.
+                    cum_volume_a: BalanceForTests::swap_amount_out_a(),
+                    cum_volume_b: BalanceForTests::add_max_amount_b(),
+                    cum_fees_a: 0,
+                    cum_fees_b: BalanceForTests::add_max_amount_b()
+                        - BalanceForTests::effective_swap_in_b(),
+                    ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_swap_exact_output_test_1() -> AccountWithMetadata {
+        // swap token_a in for 166 token_b out, fee=30bps
+        // reserve_a: 1000 + 500 = 1500 (gross deposit, see
+        // cc_swap_exact_output_token_a_test_1) reserve_b: 500  - 166 = 334
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0_u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: BalanceForTests::lp_supply_init(),
+                    reserve_a: 1500_u128,
+                    reserve_b: 334_u128,
+                    fees: BalanceForTests::fee_tier(),
+                    // exact_output A→B: deposit_a=500, withdraw_b=166;
+                    // fee = 500 - floor(500*9970/10000) = 500-498 = 2.
+                    cum_volume_a: 500_u128,
+                    cum_volume_b: 166_u128,
+                    cum_fees_a: 2_u128,
+                    cum_fees_b: 0,
+                    ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_swap_exact_output_test_2() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0_u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: BalanceForTests::lp_supply_init(),
+                    reserve_a: 715_u128,
+                    reserve_b: 701_u128,
+                    fees: BalanceForTests::fee_tier(),
+                    // exact_output B→A: deposit_b=201, withdraw_a=285;
+                    // fee = 201 - floor(201*9970/10000) = 201-200 = 1.
+                    cum_volume_a: 285_u128,
+                    cum_volume_b: 201_u128,
+                    cum_fees_a: 0,
+                    cum_fees_b: 1_u128,
+                    ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_swap_rounding_boundary_post() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0_u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: MINIMUM_LIQUIDITY,
+                    reserve_a: 1003_u128,
+                    reserve_b: 999_u128,
+                    fees: FEE_TIER_BPS_30,
+                    // Rounding-boundary A→B: deposit_a=3, withdraw_b=1;
+                    // fee = 3 - floor(3*9970/10000) = 3-2 = 1.
+                    cum_volume_a: 3_u128,
+                    cum_volume_b: 1_u128,
+                    cum_fees_a: 1_u128,
+                    cum_fees_b: 0,
+                    ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_add_zero_lp() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: BalanceForTests::vault_a_reserve_low(),
+                    reserve_a: BalanceForTests::vault_a_reserve_init(),
+                    reserve_b: BalanceForTests::vault_b_reserve_init(),
+                    fees: BalanceForTests::fee_tier(), ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_add_successful() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: BalanceForTests::add_lp_supply_successful(),
+                    reserve_a: BalanceForTests::vault_a_add_successful(),
+                    reserve_b: BalanceForTests::vault_b_add_successful(),
+                    fees: BalanceForTests::fee_tier(), ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_init_low_balances() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: MINIMUM_LIQUIDITY,
+                    reserve_a: BalanceForTests::vault_a_reserve_low(),
+                    reserve_b: BalanceForTests::vault_b_reserve_low(),
+                    fees: BalanceForTests::fee_tier(), ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_remove_successful() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: BalanceForTests::remove_lp_supply_successful(),
+                    reserve_a: BalanceForTests::vault_a_remove_successful(),
+                    reserve_b: BalanceForTests::vault_b_remove_successful(),
+                    fees: BalanceForTests::fee_tier(), ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_below_minimum_liquidity() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: MINIMUM_LIQUIDITY - 1,
+                    reserve_a: BalanceForTests::vault_a_reserve_init(),
+                    reserve_b: BalanceForTests::vault_b_reserve_init(),
+                    fees: BalanceForTests::fee_tier(), ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+
+    fn pool_definition_with_wrong_id() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: BalanceForTests::lp_supply_init(),
+                    reserve_a: BalanceForTests::vault_a_reserve_init(),
+                    reserve_b: BalanceForTests::vault_b_reserve_init(),
+                    fees: BalanceForTests::fee_tier(), ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: AccountId::new([4; 32]),
+        }
+    }
+
+    fn vault_a_with_wrong_id() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_a_definition_id(),
+                    balance: BalanceForTests::vault_a_reserve_init(),
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: AccountId::new([4; 32]),
+        }
+    }
+
+    fn vault_b_with_wrong_id() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_b_definition_id(),
+                    balance: BalanceForTests::vault_b_reserve_init(),
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: AccountId::new([4; 32]),
+        }
+    }
+
+    fn user_holding_a_wrong_program() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: MALICIOUS_TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_a_definition_id(),
+                    balance: BalanceForTests::user_token_a_balance(),
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::user_token_a_id(),
+        }
+    }
+
+    fn user_holding_b_wrong_program() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: MALICIOUS_TOKEN_PROGRAM_ID,
+                balance: 0u128,
+                data: Data::from(&TokenHolding::Fungible {
+                    definition_id: IdForTests::token_b_definition_id(),
+                    balance: BalanceForTests::user_token_b_balance(),
+                }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::user_token_b_id(),
+        }
+    }
+
+    /// Legacy/corrupted pool state whose reported supply has already been drained down to the
+    /// permanent lock (liquidity_pool_supply == MINIMUM_LIQUIDITY).
+    fn pool_definition_at_minimum_liquidity() -> AccountWithMetadata {
+        AccountWithMetadata {
+            account: Account {
+                program_owner: ProgramId::default(),
+                balance: 0u128,
+                data: Data::from(&PoolDefinition {
+                    definition_token_a_id: IdForTests::token_a_definition_id(),
+                    definition_token_b_id: IdForTests::token_b_definition_id(),
+                    vault_a_id: IdForTests::vault_a_id(),
+                    vault_b_id: IdForTests::vault_b_id(),
+                    liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                    liquidity_pool_supply: MINIMUM_LIQUIDITY,
+                    reserve_a: BalanceForTests::vault_a_reserve_init(),
+                    reserve_b: BalanceForTests::vault_b_reserve_init(),
+                    fees: BalanceForTests::fee_tier(), ..Default::default() }),
+                nonce: Nonce(0),
+            },
+            is_authorized: true,
+            account_id: IdForTests::pool_definition_id(),
+        }
+    }
+}
+
+#[test]
+fn test_pool_pda_produces_unique_id_for_token_pair() {
+    assert!(
+        amm_core::compute_pool_pda(
+            AMM_PROGRAM_ID,
+            IdForTests::token_a_definition_id(),
+            IdForTests::token_b_definition_id(),
+            FEE_TIER_BPS_30,
+        ) == compute_pool_pda(
+            AMM_PROGRAM_ID,
+            IdForTests::token_b_definition_id(),
+            IdForTests::token_a_definition_id(),
+            FEE_TIER_BPS_30,
+        )
+    );
+}
+
+/// RFP-004 Func #6: pools for the same token pair but different fee tiers
+/// must have distinct addresses so they can coexist.
+#[test]
+fn test_pool_pda_distinct_per_fee_tier_for_same_pair() {
+    let a = IdForTests::token_a_definition_id();
+    let b = IdForTests::token_b_definition_id();
+    let p1 = compute_pool_pda(AMM_PROGRAM_ID, a, b, FEE_TIER_BPS_1);
+    let p5 = compute_pool_pda(AMM_PROGRAM_ID, a, b, FEE_TIER_BPS_5);
+    let p30 = compute_pool_pda(AMM_PROGRAM_ID, a, b, FEE_TIER_BPS_30);
+    let p100 = compute_pool_pda(AMM_PROGRAM_ID, a, b, FEE_TIER_BPS_100);
+    let all = [p1, p5, p30, p100];
+    for (i, x) in all.iter().enumerate() {
+        for (j, y) in all.iter().enumerate() {
+            if i != j {
+                assert!(x != y, "fee tiers {i},{j} collide for the same pair");
+            }
+        }
+    }
+    // Same (pair, fee tier) is still deterministic / order-independent.
+    assert_eq!(p30, compute_pool_pda(AMM_PROGRAM_ID, b, a, FEE_TIER_BPS_30));
+}
+
+#[should_panic(expected = "Vault A was not provided")]
+#[test]
+fn test_call_add_liquidity_vault_a_omitted() {
+    let _post_states = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_with_wrong_id(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Vault B was not provided")]
+#[test]
+fn test_call_add_liquidity_vault_b_omitted() {
+    let _post_states = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_with_wrong_id(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "LP definition mismatch")]
+#[test]
+fn test_call_add_liquidity_lp_definition_mismatch() {
+    let _post_states = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_with_wrong_id(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Both max-balances must be nonzero")]
+#[test]
+fn test_call_add_liquidity_zero_balance_1() {
+    let _post_states = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        0,
+        BalanceForTests::add_max_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Both max-balances must be nonzero")]
+#[test]
+fn test_call_add_liquidity_zero_balance_2() {
+    let _post_states = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        0,
+        BalanceForTests::add_max_amount_a(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Vaults' balances must be at least the reserve amounts")]
+#[test]
+fn test_call_add_liquidity_vault_a_balance_below_reserve() {
+    let _post_states = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init_low(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Vaults' balances must be at least the reserve amounts")]
+#[test]
+fn test_call_add_liquidity_vault_b_balance_below_reserve() {
+    let _post_states = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init_low(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Vaults' balances must be at least the reserve amounts")]
+#[test]
+fn test_call_add_liquidity_vault_insufficient_balance_1() {
+    let _post_states = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init_zero(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Vaults' balances must be at least the reserve amounts")]
+#[test]
+fn test_call_add_liquidity_vault_insufficient_balance_2() {
+    let _post_states = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init_zero(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "A trade amount is 0")]
+#[test]
+fn test_call_add_liquidity_actual_amount_zero_1() {
+    let _post_states = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init_reserve_a_low(),
+        AccountWithMetadataForTests::vault_a_init_low(),
+        AccountWithMetadataForTests::vault_b_init_high(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "A trade amount is 0")]
+#[test]
+fn test_call_add_liquidity_actual_amount_zero_2() {
+    let _post_states = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init_reserve_b_low(),
+        AccountWithMetadataForTests::vault_a_init_high(),
+        AccountWithMetadataForTests::vault_b_init_low(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a_low(),
+        BalanceForTests::add_max_amount_b_low(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Reserves must be nonzero")]
+#[test]
+fn test_call_add_liquidity_reserves_zero_1() {
+    let _post_states = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init_reserve_a_zero(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Reserves must be nonzero")]
+#[test]
+fn test_call_add_liquidity_reserves_zero_2() {
+    let _post_states = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init_reserve_b_zero(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Payable LP must be nonzero")]
+#[test]
+fn test_call_add_liquidity_payable_lp_zero() {
+    let _post_states = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_add_zero_lp(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a_low(),
+        BalanceForTests::add_max_amount_b_low(),
+    0i64,
+    );
+}
+
+#[test]
+fn test_call_add_liquidity_chained_call_successsful() {
+    let (post_states, chained_calls) = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    0i64,
+    );
+
+    let pool_post = post_states[0].clone();
+
+    assert!(
+        AccountWithMetadataForTests::pool_definition_add_successful().account
+            == *pool_post.account()
+    );
+
+    let chained_call_lp = chained_calls[0].clone();
+    let chained_call_b = chained_calls[1].clone();
+    let chained_call_a = chained_calls[2].clone();
+
+    assert!(chained_call_a == ChainedCallForTests::cc_add_token_a());
+    assert!(chained_call_b == ChainedCallForTests::cc_add_token_b());
+    assert!(chained_call_lp == ChainedCallForTests::cc_add_pool_lp());
+}
+
+#[should_panic(expected = "Vault A was not provided")]
+#[test]
+fn test_call_remove_liquidity_vault_a_omitted() {
+    let _post_states = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_with_wrong_id(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Vault B was not provided")]
+#[test]
+fn test_call_remove_liquidity_vault_b_omitted() {
+    let _post_states = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_with_wrong_id(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "LP definition mismatch")]
+#[test]
+fn test_call_remove_liquidity_lp_def_mismatch() {
+    let _post_states = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_with_wrong_id(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Invalid liquidity account provided")]
+#[test]
+fn test_call_remove_liquidity_insufficient_liquidity_amount() {
+    let _post_states = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_a(), /* different token account than lp to
+                                                        * create desired
+                                                        * error */
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(
+    expected = "Insufficient minimal withdraw amount (Token A) provided for liquidity amount"
+)]
+#[test]
+fn test_call_remove_liquidity_insufficient_balance_1() {
+    let _post_states = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::remove_amount_lp_1()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Pool only contains locked liquidity")]
+#[test]
+fn test_call_remove_liquidity_pool_at_minimum_liquidity() {
+    // Removing from a legacy/corrupted pool that is already at the locked floor must be rejected.
+    let _post_states = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_at_minimum_liquidity(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_with_balance(MINIMUM_LIQUIDITY),
+        NonZero::new(MINIMUM_LIQUIDITY).unwrap(),
+        1,
+        1,
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Cannot remove locked minimum liquidity")]
+#[test]
+fn test_call_remove_liquidity_exceeds_unlocked_supply() {
+    // Model corrupted ownership by giving the caller the full LP supply even though the lock
+    // account should permanently hold MINIMUM_LIQUIDITY. The guard must still refuse to burn
+    // through the permanent floor.
+    let _post_states = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_with_balance(BalanceForTests::lp_supply_init()),
+        NonZero::new(BalanceForTests::lp_supply_init()).unwrap(),
+        1,
+        1,
+    0i64,
+    );
+}
+
+#[should_panic(
+    expected = "Insufficient minimal withdraw amount (Token B) provided for liquidity amount"
+)]
+#[test]
+fn test_call_remove_liquidity_insufficient_balance_2() {
+    let _post_states = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Minimum withdraw amount must be nonzero")]
+#[test]
+fn test_call_remove_liquidity_min_bal_zero_1() {
+    let _post_states = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        0,
+        BalanceForTests::remove_min_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Minimum withdraw amount must be nonzero")]
+#[test]
+fn test_call_remove_liquidity_min_bal_zero_2() {
+    let _post_states = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        0,
+    0i64,
+    );
+}
+
+#[test]
+fn test_call_remove_liquidity_chained_call_successful() {
+    let (post_states, chained_calls) = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b_low(),
+    0i64,
+    );
+
+    let pool_post = post_states[0].clone();
+
+    assert!(
+        AccountWithMetadataForTests::pool_definition_remove_successful().account
+            == *pool_post.account()
+    );
+
+    let chained_call_lp = chained_calls[0].clone();
+    let chained_call_b = chained_calls[1].clone();
+    let chained_call_a = chained_calls[2].clone();
+
+    assert!(chained_call_a == ChainedCallForTests::cc_remove_token_a());
+    assert!(chained_call_b == ChainedCallForTests::cc_remove_token_b());
+    assert!(chained_call_lp == ChainedCallForTests::cc_remove_pool_lp());
+}
+
+#[should_panic(expected = "Balances must be nonzero")]
+#[test]
+fn test_call_new_definition_with_zero_balance_1() {
+    let _post_states = new_definition(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(0).expect("Balances must be nonzero"),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Balances must be nonzero")]
+#[test]
+fn test_call_new_definition_with_zero_balance_2() {
+    let _post_states = new_definition(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(0).expect("Balances must be nonzero"),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Cannot set up a swap for a token with itself")]
+#[test]
+fn test_call_new_definition_same_token_definition() {
+    let _post_states = new_definition(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Liquidity pool Token Definition Account ID does not match PDA")]
+#[test]
+fn test_call_new_definition_wrong_liquidity_id() {
+    let _post_states = new_definition(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_with_wrong_id(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+}
+
+#[should_panic(expected = "LP lock holding Account ID does not match PDA")]
+#[test]
+fn test_call_new_definition_wrong_lp_lock_holding_id() {
+    let _post_states = new_definition(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::lp_lock_holding_with_wrong_id(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Pool Definition Account ID does not match PDA")]
+#[test]
+fn test_call_new_definition_wrong_pool_id() {
+    let _post_states = new_definition(
+        AccountWithMetadataForTests::pool_definition_with_wrong_id(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Vault ID does not match PDA")]
+#[test]
+fn test_call_new_definition_wrong_vault_id_1() {
+    let _post_states = new_definition(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_with_wrong_id(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Vault ID does not match PDA")]
+#[test]
+fn test_call_new_definition_wrong_vault_id_2() {
+    let _post_states = new_definition(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_with_wrong_id(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Pool account must be uninitialized")]
+#[test]
+fn test_call_new_definition_rejects_initialized_pool() {
+    // Verify that new_definition fails if passed an already-initialized pool
+    let _post_states = new_definition(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_uninit(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Initial liquidity must exceed minimum liquidity lock")]
+#[test]
+fn test_call_new_definition_initial_lp_too_small() {
+    // isqrt(1000 * 1000) = 1000 == MINIMUM_LIQUIDITY, so the assertion fires.
+    let _post_states = new_definition(
+        AccountWithMetadataForTests::pool_definition_uninit(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_uninit(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(MINIMUM_LIQUIDITY).unwrap(),
+        NonZero::new(MINIMUM_LIQUIDITY).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+}
+
+#[test]
+fn test_call_new_definition_chained_call_successful() {
+    let (post_states, chained_calls) = new_definition(
+        AccountWithMetadataForTests::pool_definition_uninit(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_uninit(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+
+    let pool_post = post_states[0].clone();
+
+    assert!(AccountWithMetadataForTests::pool_definition_init().account == *pool_post.account());
+    assert_eq!(
+        pool_post.required_claim(),
+        Some(Claim::Pda(compute_pool_pda_seed(
+            IdForTests::token_a_definition_id(),
+            IdForTests::token_b_definition_id(),
+            FEE_TIER_BPS_30,
+        )))
+    );
+
+    let chained_call_lp_lock = chained_calls[0].clone();
+    let chained_call_lp_user = chained_calls[1].clone();
+    let chained_call_b = chained_calls[2].clone();
+    let chained_call_a = chained_calls[3].clone();
+
+    assert!(chained_call_a == ChainedCallForTests::cc_new_definition_token_a());
+    assert!(chained_call_b == ChainedCallForTests::cc_new_definition_token_b());
+    assert!(chained_call_lp_lock == ChainedCallForTests::cc_new_definition_token_lp_lock());
+    assert!(chained_call_lp_user == ChainedCallForTests::cc_new_definition_token_lp_user());
+}
+
+#[should_panic(expected = "AccountId is not a token type for the pool")]
+#[test]
+fn test_call_swap_incorrect_token_type() {
+    let _post_states = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::min_amount_out(),
+        IdForTests::token_lp_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Vault A was not provided")]
+#[test]
+fn test_call_swap_vault_a_omitted() {
+    let _post_states = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_with_wrong_id(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::min_amount_out(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Vault B was not provided")]
+#[test]
+fn test_call_swap_vault_b_omitted() {
+    let _post_states = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_with_wrong_id(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::min_amount_out(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Reserve for Token A exceeds vault balance")]
+#[test]
+fn test_call_swap_reserves_vault_mismatch_1() {
+    let _post_states = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init_low(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::min_amount_out(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Reserve for Token B exceeds vault balance")]
+#[test]
+fn test_call_swap_reserves_vault_mismatch_2() {
+    let _post_states = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init_low(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::min_amount_out(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Pool liquidity supply is below minimum liquidity")]
+#[test]
+fn test_call_swap_below_minimum_liquidity() {
+    let _post_states = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_below_minimum_liquidity(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::min_amount_out(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Fee tier must be one of 1, 5, 30, or 100 basis points")]
+#[test]
+fn test_call_swap_rejects_unsupported_fee_tier() {
+    let mut pool = AccountWithMetadataForTests::pool_definition_init();
+    let mut pool_def = PoolDefinition::try_from(&pool.account.data).unwrap();
+    pool_def.fees = 2;
+    pool.account.data = Data::from(&pool_def);
+
+    let _post_states = swap_exact_input(
+        pool,
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_a_low(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Withdraw amount is less than minimal amount out")]
+#[test]
+fn test_call_swap_below_min_out() {
+    let _post_states = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::min_amount_out_too_high(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Effective swap amount should be nonzero")]
+#[test]
+fn test_call_swap_effective_amount_zero() {
+    let _post_states = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        1,
+        0,
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Withdraw amount should be nonzero")]
+#[test]
+fn test_call_swap_output_rounds_to_zero() {
+    let _post_states = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_init_low_balances(),
+        AccountWithMetadataForTests::vault_a_init_low(),
+        AccountWithMetadataForTests::vault_b_init_low(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        2,
+        0,
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Withdraw amount is less than minimal amount out")]
+#[test]
+fn test_call_swap_exact_input_rejects_amount_that_rounds_down_below_target_output() {
+    let _post_states = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_swap_rounding_boundary_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        2,
+        1,
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[test]
+fn test_call_swap_exact_input_accepts_smallest_amount_for_rounded_boundary() {
+    let (post_states, chained_calls) = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_swap_rounding_boundary_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        3,
+        1,
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+
+    let pool_post = post_states[0].clone();
+
+    assert_eq!(
+        AccountWithMetadataForTests::pool_definition_swap_rounding_boundary_post().account,
+        *pool_post.account()
+    );
+
+    let chained_call_a = chained_calls[0].clone();
+    let chained_call_b = chained_calls[1].clone();
+
+    assert_eq!(
+        chained_call_a,
+        ChainedCallForTests::cc_swap_rounding_boundary_token_a_in()
+    );
+    assert_eq!(
+        chained_call_b,
+        ChainedCallForTests::cc_swap_rounding_boundary_token_b_out()
+    );
+}
+
+#[test]
+fn test_call_swap_chained_call_successful_1() {
+    let (post_states, chained_calls) = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_a_low(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+
+    let pool_post = post_states[0].clone();
+
+    assert!(
+        AccountWithMetadataForTests::pool_definition_swap_test_1().account == *pool_post.account()
+    );
+
+    let chained_call_a = chained_calls[0].clone();
+    let chained_call_b = chained_calls[1].clone();
+
+    assert_eq!(
+        chained_call_a,
+        ChainedCallForTests::cc_swap_token_a_test_1()
+    );
+    assert_eq!(
+        chained_call_b,
+        ChainedCallForTests::cc_swap_token_b_test_1()
+    );
+}
+
+#[test]
+fn test_call_swap_chained_call_successful_2() {
+    let (post_states, chained_calls) = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_b(),
+        BalanceForTests::min_amount_out(),
+        IdForTests::token_b_definition_id(),
+    0i64,
+    );
+
+    let pool_post = post_states[0].clone();
+
+    assert!(
+        AccountWithMetadataForTests::pool_definition_swap_test_2().account == *pool_post.account()
+    );
+
+    let chained_call_a = chained_calls[1].clone();
+    let chained_call_b = chained_calls[0].clone();
+
+    assert_eq!(
+        chained_call_a,
+        ChainedCallForTests::cc_swap_token_a_test_2()
+    );
+    assert_eq!(
+        chained_call_b,
+        ChainedCallForTests::cc_swap_token_b_test_2()
+    );
+}
+
+#[should_panic(expected = "AccountId is not a token type for the pool")]
+#[test]
+fn call_swap_exact_output_incorrect_token_type() {
+    let _post_states = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::max_amount_in(),
+        IdForTests::token_lp_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Vault A was not provided")]
+#[test]
+fn call_swap_exact_output_vault_a_omitted() {
+    let _post_states = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_with_wrong_id(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::max_amount_in(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Vault B was not provided")]
+#[test]
+fn call_swap_exact_output_vault_b_omitted() {
+    let _post_states = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_with_wrong_id(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::max_amount_in(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Reserve for Token A exceeds vault balance")]
+#[test]
+fn call_swap_exact_output_reserves_vault_mismatch_1() {
+    let _post_states = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init_low(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::max_amount_in(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Reserve for Token B exceeds vault balance")]
+#[test]
+fn call_swap_exact_output_reserves_vault_mismatch_2() {
+    let _post_states = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init_low(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::max_amount_in(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Pool liquidity supply is below minimum liquidity")]
+#[test]
+fn call_swap_exact_output_below_minimum_liquidity() {
+    let _post_states = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_below_minimum_liquidity(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::max_amount_in(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Required input exceeds maximum amount in")]
+#[test]
+fn call_swap_exact_output_exceeds_max_in() {
+    let _post_states = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        166_u128,
+        100_u128,
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Exact amount out must be nonzero")]
+#[test]
+fn call_swap_exact_output_zero() {
+    let _post_states = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        0_u128,
+        500_u128,
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Exact amount out exceeds reserve")]
+#[test]
+fn call_swap_exact_output_exceeds_reserve() {
+    let _post_states = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::vault_b_reserve_init(),
+        BalanceForTests::max_amount_in(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[test]
+fn call_swap_exact_output_chained_call_successful() {
+    let (post_states, chained_calls) = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_swap_exact_output_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::max_amount_in(),
+        BalanceForTests::vault_b_reserve_init(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+
+    let pool_post = post_states[0].clone();
+
+    assert!(
+        AccountWithMetadataForTests::pool_definition_swap_exact_output_test_1().account
+            == *pool_post.account()
+    );
+
+    let chained_call_a = chained_calls[0].clone();
+    let chained_call_b = chained_calls[1].clone();
+
+    assert_eq!(
+        chained_call_a,
+        ChainedCallForTests::cc_swap_exact_output_token_a_test_1()
+    );
+    assert_eq!(
+        chained_call_b,
+        ChainedCallForTests::cc_swap_exact_output_token_b_test_1()
+    );
+}
+
+#[test]
+fn call_swap_exact_output_chained_call_successful_2() {
+    let (post_states, chained_calls) = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_swap_exact_output_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        285,
+        300,
+        IdForTests::token_b_definition_id(),
+    0i64,
+    );
+
+    let pool_post = post_states[0].clone();
+
+    assert!(
+        AccountWithMetadataForTests::pool_definition_swap_exact_output_test_2().account
+            == *pool_post.account()
+    );
+
+    let chained_call_a = chained_calls[1].clone();
+    let chained_call_b = chained_calls[0].clone();
+
+    assert_eq!(
+        chained_call_a,
+        ChainedCallForTests::cc_swap_exact_output_token_a_test_2()
+    );
+    assert_eq!(
+        chained_call_b,
+        ChainedCallForTests::cc_swap_exact_output_token_b_test_2()
+    );
+}
+
+// The minimum effective input for exact_amount_out=166 on the 1000/500 pool is 498.
+// After fee rounding, the true minimum gross input is 500, so 499 must be rejected.
+#[should_panic(expected = "Required input exceeds maximum amount in")]
+#[test]
+fn call_swap_exact_output_fee_enforced() {
+    let _post_states = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_swap_exact_output_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        166_u128, // exact_amount_out: token_b
+        499_u128, // max_amount_in: still one short after fee rounding
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+// On a 1000/1000 pool at 0.3%, exact_amount_out = 1 requires gross input 3.
+// max_amount_in = 2 must be rejected because the exact-input path would round
+// 2 down to effective_in = 1 and still produce 0 output.
+#[should_panic(expected = "Required input exceeds maximum amount in")]
+#[test]
+fn call_swap_exact_output_rejects_max_in_that_rounds_down_below_target_output() {
+    let _post_states = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_swap_rounding_boundary_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        1,
+        2,
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[test]
+fn call_swap_exact_output_accepts_smallest_max_in_for_rounded_boundary() {
+    let (post_states, chained_calls) = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_swap_rounding_boundary_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        1,
+        3,
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+
+    let pool_post = post_states[0].clone();
+
+    assert_eq!(
+        AccountWithMetadataForTests::pool_definition_swap_rounding_boundary_post().account,
+        *pool_post.account()
+    );
+
+    let chained_call_a = chained_calls[0].clone();
+    let chained_call_b = chained_calls[1].clone();
+
+    assert_eq!(
+        chained_call_a,
+        ChainedCallForTests::cc_swap_rounding_boundary_token_a_in()
+    );
+    assert_eq!(
+        chained_call_b,
+        ChainedCallForTests::cc_swap_rounding_boundary_token_b_out()
+    );
+}
+
+// Without the fix, `reserve_a * exact_amount_out` silently wraps to 0 in release mode,
+// making `deposit_amount = 0`. The slippage check `0 <= max_amount_in` always passes,
+// so an attacker receives `exact_amount_out` tokens while paying nothing.
+#[should_panic(expected = "reserve * amount_out overflows u128")]
+#[test]
+fn swap_exact_output_overflow_protection() {
+    // reserve_a chosen so that reserve_a * 2 overflows u128:
+    //   (u128::MAX / 2 + 1) * 2 = u128::MAX + 1 → wraps to 0
+    let large_reserve: u128 = u128::MAX / 2 + 1;
+    let reserve_b: u128 = 1_000;
+
+    let pool = AccountWithMetadata {
+        account: Account {
+            program_owner: ProgramId::default(),
+            balance: 0,
+            data: Data::from(&PoolDefinition {
+                definition_token_a_id: IdForTests::token_a_definition_id(),
+                definition_token_b_id: IdForTests::token_b_definition_id(),
+                vault_a_id: IdForTests::vault_a_id(),
+                vault_b_id: IdForTests::vault_b_id(),
+                liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                liquidity_pool_supply: MINIMUM_LIQUIDITY,
+                reserve_a: large_reserve,
+                reserve_b,
+                fees: BalanceForTests::fee_tier(), ..Default::default() }),
+            nonce: Nonce(0),
+        },
+        is_authorized: true,
+        account_id: IdForTests::pool_definition_id(),
+    };
+
+    let vault_a = AccountWithMetadata {
+        account: Account {
+            program_owner: TOKEN_PROGRAM_ID,
+            balance: 0,
+            data: Data::from(&TokenHolding::Fungible {
+                definition_id: IdForTests::token_a_definition_id(),
+                balance: large_reserve,
+            }),
+            nonce: Nonce(0),
+        },
+        is_authorized: true,
+        account_id: IdForTests::vault_a_id(),
+    };
+
+    let vault_b = AccountWithMetadata {
+        account: Account {
+            program_owner: TOKEN_PROGRAM_ID,
+            balance: 0,
+            data: Data::from(&TokenHolding::Fungible {
+                definition_id: IdForTests::token_b_definition_id(),
+                balance: reserve_b,
+            }),
+            nonce: Nonce(0),
+        },
+        is_authorized: true,
+        account_id: IdForTests::vault_b_id(),
+    };
+
+    let _result = swap_exact_output(
+        pool,
+        vault_a,
+        vault_b,
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        2, // exact_amount_out: small, valid (< reserve_b)
+        1, // max_amount_in: tiny — real deposit would be enormous, but
+        // overflow wraps it to 0, making 0 <= 1 pass silently
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[test]
+fn test_new_definition_lp_asymmetric_amounts() {
+    let (post_states, chained_calls) = new_definition(
+        AccountWithMetadataForTests::pool_definition_uninit(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_uninit(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+
+    // check the minted LP amount
+    let pool_post = post_states[0].clone();
+    let pool_def = PoolDefinition::try_from(&pool_post.account().data).unwrap();
+    assert_eq!(
+        pool_def.liquidity_pool_supply,
+        BalanceForTests::lp_supply_init()
+    );
+
+    let chained_call_lp_lock = chained_calls[0].clone();
+    let chained_call_lp_user = chained_calls[1].clone();
+    assert!(chained_call_lp_lock == ChainedCallForTests::cc_new_definition_token_lp_lock());
+    assert!(chained_call_lp_user == ChainedCallForTests::cc_new_definition_token_lp_user());
+}
+
+#[test]
+fn test_new_definition_lp_symmetric_amounts() {
+    // token_a=2000, token_b=2000 → LP=sqrt(4_000_000)=2000
+    let token_a_amount = 2_000u128;
+    let token_b_amount = 2_000u128;
+    let expected_lp = (token_a_amount * token_b_amount).isqrt();
+    assert_eq!(expected_lp, 2_000);
+
+    let (post_states, chained_calls) = new_definition(
+        AccountWithMetadataForTests::pool_definition_uninit(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_uninit(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(token_a_amount).unwrap(),
+        NonZero::new(token_b_amount).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+
+    let pool_post = post_states[0].clone();
+    let pool_def = PoolDefinition::try_from(&pool_post.account().data).unwrap();
+    assert_eq!(pool_def.liquidity_pool_supply, expected_lp);
+
+    let chained_call_lp_lock = chained_calls[0].clone();
+    let chained_call_lp_user = chained_calls[1].clone();
+
+    let mut pool_lp_auth = AccountForTests::pool_lp_uninit();
+    pool_lp_auth.is_authorized = true;
+    let mut lp_lock_holding_auth = AccountForTests::lp_lock_holding_uninit();
+    lp_lock_holding_auth.is_authorized = true;
+    let expected_lp_lock_call = ChainedCall::new(
+        TOKEN_PROGRAM_ID,
+        vec![pool_lp_auth.clone(), lp_lock_holding_auth],
+        &token_core::Instruction::NewFungibleDefinition {
+            name: String::from("LP Token"),
+            total_supply: MINIMUM_LIQUIDITY,
+        },
+    )
+    .with_pda_seeds(vec![
+        compute_liquidity_token_pda_seed(IdForTests::pool_definition_id()),
+        compute_lp_lock_holding_pda_seed(IdForTests::pool_definition_id()),
+    ]);
+
+    let expected_lp_user_call = ChainedCall::new(
+        TOKEN_PROGRAM_ID,
+        vec![
+            AccountForTests::pool_lp_created_after_lock(),
+            AccountForTests::user_holding_lp_uninit(),
+        ],
+        &token_core::Instruction::Mint {
+            amount_to_mint: expected_lp - MINIMUM_LIQUIDITY,
+        },
+    )
+    .with_pda_seeds(vec![compute_liquidity_token_pda_seed(
+        IdForTests::pool_definition_id(),
+    )]);
+
+    assert_eq!(chained_call_lp_lock, expected_lp_lock_call);
+    assert_eq!(chained_call_lp_user, expected_lp_user_call);
+}
+
+#[test]
+fn test_minimum_liquidity_lock_and_remove_all_user_lp() {
+    let pool_uninitialized = AccountWithMetadata {
+        account: Account::default(),
+        is_authorized: true,
+        account_id: IdForTests::pool_definition_id(),
+    };
+    let token_a_amount = BalanceForTests::vault_a_reserve_init();
+    let token_b_amount = BalanceForTests::vault_b_reserve_init();
+    let initial_lp = (token_a_amount * token_b_amount).isqrt();
+    let user_lp = initial_lp - MINIMUM_LIQUIDITY;
+
+    let (post_states, chained_calls) = new_definition(
+        pool_uninitialized,
+        AccountForTests::vault_a_init(),
+        AccountForTests::vault_b_init(),
+        AccountForTests::pool_lp_uninit(),
+        AccountForTests::lp_lock_holding_uninit(),
+        AccountForTests::user_holding_a(),
+        AccountForTests::user_holding_b(),
+        AccountForTests::user_holding_lp_uninit(),
+        NonZero::new(token_a_amount).unwrap(),
+        NonZero::new(token_b_amount).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+
+    let mut pool_lp_auth = AccountForTests::pool_lp_uninit();
+    pool_lp_auth.is_authorized = true;
+    let mut lp_lock_holding_auth = AccountForTests::lp_lock_holding_uninit();
+    lp_lock_holding_auth.is_authorized = true;
+
+    let expected_lock_call = ChainedCall::new(
+        TOKEN_PROGRAM_ID,
+        vec![pool_lp_auth.clone(), lp_lock_holding_auth],
+        &token_core::Instruction::NewFungibleDefinition {
+            name: String::from("LP Token"),
+            total_supply: MINIMUM_LIQUIDITY,
+        },
+    )
+    .with_pda_seeds(vec![
+        compute_liquidity_token_pda_seed(IdForTests::pool_definition_id()),
+        compute_lp_lock_holding_pda_seed(IdForTests::pool_definition_id()),
+    ]);
+    let expected_user_call = ChainedCall::new(
+        TOKEN_PROGRAM_ID,
+        vec![
+            AccountForTests::pool_lp_created_after_lock(),
+            AccountForTests::user_holding_lp_uninit(),
+        ],
+        &token_core::Instruction::Mint {
+            amount_to_mint: user_lp,
+        },
+    )
+    .with_pda_seeds(vec![compute_liquidity_token_pda_seed(
+        IdForTests::pool_definition_id(),
+    )]);
+    assert_eq!(chained_calls[0], expected_lock_call);
+    assert_eq!(chained_calls[1], expected_user_call);
+
+    let pool_post = PoolDefinition::try_from(&post_states[0].account().data).unwrap();
+    assert_eq!(pool_post.liquidity_pool_supply, initial_lp);
+
+    let pool_for_remove = AccountWithMetadata {
+        account: post_states[0].account().clone(),
+        is_authorized: true,
+        account_id: IdForTests::pool_definition_id(),
+    };
+    let (remove_post_states, _) = remove_liquidity(
+        pool_for_remove,
+        AccountForTests::vault_a_init(),
+        AccountForTests::vault_b_init(),
+        AccountForTests::pool_lp_init(),
+        AccountForTests::user_holding_a(),
+        AccountForTests::user_holding_b(),
+        AccountForTests::user_holding_lp_with_balance(user_lp),
+        NonZero::new(user_lp).unwrap(),
+        1,
+        1,
+    0i64,
+    );
+
+    let pool_after_remove =
+        PoolDefinition::try_from(&remove_post_states[0].account().data).unwrap();
+    assert_eq!(pool_after_remove.liquidity_pool_supply, MINIMUM_LIQUIDITY);
+    assert!(pool_after_remove.reserve_a > 0);
+    assert!(pool_after_remove.reserve_b > 0);
+}
+
+#[test]
+fn test_sync_reserves_with_donation() {
+    let pool = AccountWithMetadataForTests::pool_definition_init();
+    let donation_a = 111u128;
+
+    let mut donated_vault_a = AccountWithMetadataForTests::vault_a_init();
+    donated_vault_a.account.data = Data::from(&TokenHolding::Fungible {
+        definition_id: IdForTests::token_a_definition_id(),
+        balance: BalanceForTests::vault_a_reserve_init() + donation_a,
+    });
+
+    let pool_pre = PoolDefinition::try_from(&pool.account.data).unwrap();
+    assert_eq!(pool_pre.reserve_a, BalanceForTests::vault_a_reserve_init());
+
+    let (post_states, chained_calls) = sync_reserves(
+        pool,
+        donated_vault_a,
+        AccountWithMetadataForTests::vault_b_init(),
+    0i64,
+    );
+    assert!(chained_calls.is_empty());
+
+    let pool_post = PoolDefinition::try_from(&post_states[0].account().data).unwrap();
+    assert_eq!(
+        pool_post.reserve_a,
+        BalanceForTests::vault_a_reserve_init() + donation_a
+    );
+    assert_eq!(pool_post.reserve_b, BalanceForTests::vault_b_reserve_init());
+}
+
+#[should_panic(expected = "Sync reserves: vault A balance is less than its reserve")]
+#[test]
+fn test_sync_reserves_panics_when_vault_a_under_collateralized() {
+    let _ = sync_reserves(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init_low(),
+        AccountWithMetadataForTests::vault_b_init(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Sync reserves: vault B balance is less than its reserve")]
+#[test]
+fn test_sync_reserves_panics_when_vault_b_under_collateralized() {
+    let _ = sync_reserves(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init_low(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Pool liquidity supply is below minimum liquidity")]
+#[test]
+fn test_sync_reserves_rejects_pool_below_minimum_liquidity() {
+    let _ = sync_reserves(
+        AccountWithMetadataForTests::pool_definition_below_minimum_liquidity(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Fee tier must be one of 1, 5, 30, or 100 basis points")]
+#[test]
+fn test_sync_reserves_rejects_unsupported_fee_tier() {
+    let mut pool = AccountWithMetadataForTests::pool_definition_init();
+    let mut pool_def = PoolDefinition::try_from(&pool.account.data).unwrap();
+    pool_def.fees = 2;
+    pool.account.data = Data::from(&pool_def);
+
+    let _ = sync_reserves(
+        pool,
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+    0i64,
+    );
+}
+
+#[test]
+fn test_donation_then_add_liquidity_sync_mitigates_mispricing() {
+    let donation_a = 100u128;
+
+    let mut donated_vault_a = AccountWithMetadataForTests::vault_a_init();
+    donated_vault_a.account.data = Data::from(&TokenHolding::Fungible {
+        definition_id: IdForTests::token_a_definition_id(),
+        balance: BalanceForTests::vault_a_reserve_init() + donation_a,
+    });
+    let donated_vault_b = AccountWithMetadataForTests::vault_b_init();
+
+    let (post_unsynced, _) = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        donated_vault_a.clone(),
+        donated_vault_b.clone(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(1).unwrap(),
+        100,
+        50,
+    0i64,
+    );
+    let unsynced_pool_post = PoolDefinition::try_from(&post_unsynced[0].account().data).unwrap();
+    let unsynced_delta_lp =
+        unsynced_pool_post.liquidity_pool_supply - BalanceForTests::lp_supply_init();
+
+    let donated_vault_a_for_synced_add = donated_vault_a.clone();
+    let donated_vault_b_for_synced_add = donated_vault_b.clone();
+
+    let (sync_post, _) = sync_reserves(
+        AccountWithMetadataForTests::pool_definition_init(),
+        donated_vault_a,
+        donated_vault_b,
+    0i64,
+    );
+    let synced_pool = AccountWithMetadata {
+        account: sync_post[0].account().clone(),
+        is_authorized: true,
+        account_id: IdForTests::pool_definition_id(),
+    };
+
+    let (post_synced, _) = add_liquidity(
+        synced_pool,
+        donated_vault_a_for_synced_add,
+        donated_vault_b_for_synced_add,
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(1).unwrap(),
+        100,
+        50,
+    0i64,
+    );
+    let synced_pool_post = PoolDefinition::try_from(&post_synced[0].account().data).unwrap();
+    let synced_delta_lp = synced_pool_post.liquidity_pool_supply
+        - PoolDefinition::try_from(&sync_post[0].account().data)
+            .unwrap()
+            .liquidity_pool_supply;
+
+    assert!(synced_delta_lp < unsynced_delta_lp);
+}
+
+#[should_panic(expected = "token_a * token_b overflows u128")]
+#[test]
+fn new_definition_overflow_protection() {
+    let large_amount = u128::MAX / 2 + 1;
+
+    let _result = new_definition(
+        AccountWithMetadataForTests::pool_definition_uninit(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_uninit(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(large_amount).unwrap(),
+        NonZero::new(2).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+}
+
+#[should_panic(expected = "reserve_a * max_amount_b overflows u128")]
+#[test]
+fn add_liquidity_overflow_protection() {
+    let large_reserve: u128 = u128::MAX / 2 + 1;
+    let reserve_b: u128 = 1_000;
+
+    let pool = AccountWithMetadata {
+        account: Account {
+            program_owner: ProgramId::default(),
+            balance: 0,
+            data: Data::from(&PoolDefinition {
+                definition_token_a_id: IdForTests::token_a_definition_id(),
+                definition_token_b_id: IdForTests::token_b_definition_id(),
+                vault_a_id: IdForTests::vault_a_id(),
+                vault_b_id: IdForTests::vault_b_id(),
+                liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                liquidity_pool_supply: MINIMUM_LIQUIDITY,
+                reserve_a: large_reserve,
+                reserve_b,
+                fees: BalanceForTests::fee_tier(), ..Default::default() }),
+            nonce: Nonce(0),
+        },
+        is_authorized: true,
+        account_id: IdForTests::pool_definition_id(),
+    };
+
+    let vault_a = AccountWithMetadata {
+        account: Account {
+            program_owner: TOKEN_PROGRAM_ID,
+            balance: 0,
+            data: Data::from(&TokenHolding::Fungible {
+                definition_id: IdForTests::token_a_definition_id(),
+                balance: large_reserve,
+            }),
+            nonce: Nonce(0),
+        },
+        is_authorized: false,
+        account_id: IdForTests::vault_a_id(),
+    };
+
+    let vault_b = AccountWithMetadata {
+        account: Account {
+            program_owner: TOKEN_PROGRAM_ID,
+            balance: 0,
+            data: Data::from(&TokenHolding::Fungible {
+                definition_id: IdForTests::token_b_definition_id(),
+                balance: reserve_b,
+            }),
+            nonce: Nonce(0),
+        },
+        is_authorized: false,
+        account_id: IdForTests::vault_b_id(),
+    };
+
+    let _result = add_liquidity(
+        pool,
+        vault_a,
+        vault_b,
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(1).unwrap(),
+        500,
+        2, // max_amount_b=2 → reserve_a * 2 overflows
+    0i64,
+    );
+}
+
+#[should_panic(expected = "reserve_a * remove_liquidity_amount overflows u128")]
+#[test]
+fn remove_liquidity_overflow_protection() {
+    let large_reserve: u128 = u128::MAX / 2 + 1;
+    let reserve_b: u128 = 1_000;
+    let lp_supply: u128 = 1_002; // must exceed MINIMUM_LIQUIDITY so remove_amount=2 passes the lock check
+
+    let pool = AccountWithMetadata {
+        account: Account {
+            program_owner: ProgramId::default(),
+            balance: 0,
+            data: Data::from(&PoolDefinition {
+                definition_token_a_id: IdForTests::token_a_definition_id(),
+                definition_token_b_id: IdForTests::token_b_definition_id(),
+                vault_a_id: IdForTests::vault_a_id(),
+                vault_b_id: IdForTests::vault_b_id(),
+                liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                liquidity_pool_supply: lp_supply,
+                reserve_a: large_reserve,
+                reserve_b,
+                fees: BalanceForTests::fee_tier(), ..Default::default() }),
+            nonce: Nonce(0),
+        },
+        is_authorized: true,
+        account_id: IdForTests::pool_definition_id(),
+    };
+
+    let vault_a = AccountWithMetadata {
+        account: Account {
+            program_owner: TOKEN_PROGRAM_ID,
+            balance: 0,
+            data: Data::from(&TokenHolding::Fungible {
+                definition_id: IdForTests::token_a_definition_id(),
+                balance: large_reserve,
+            }),
+            nonce: Nonce(0),
+        },
+        is_authorized: false,
+        account_id: IdForTests::vault_a_id(),
+    };
+
+    let vault_b = AccountWithMetadata {
+        account: Account {
+            program_owner: TOKEN_PROGRAM_ID,
+            balance: 0,
+            data: Data::from(&TokenHolding::Fungible {
+                definition_id: IdForTests::token_b_definition_id(),
+                balance: reserve_b,
+            }),
+            nonce: Nonce(0),
+        },
+        is_authorized: false,
+        account_id: IdForTests::vault_b_id(),
+    };
+
+    let user_lp = AccountWithMetadata {
+        account: Account {
+            program_owner: TOKEN_PROGRAM_ID,
+            balance: 0,
+            data: Data::from(&TokenHolding::Fungible {
+                definition_id: IdForTests::token_lp_definition_id(),
+                balance: 2,
+            }),
+            nonce: Nonce(0),
+        },
+        is_authorized: true,
+        account_id: IdForTests::user_token_lp_id(),
+    };
+
+    let _result = remove_liquidity(
+        pool,
+        vault_a,
+        vault_b,
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        user_lp,
+        NonZero::new(2).unwrap(), // remove_amount=2 → reserve_a * 2 overflows
+        1,
+        1,
+    0i64,
+    );
+}
+
+#[should_panic(expected = "reserve * effective_amount_in overflows u128")]
+#[test]
+fn swap_exact_input_overflow_protection() {
+    let large_reserve: u128 = u128::MAX / 2 + 1;
+    let reserve_b: u128 = 1_000;
+
+    let pool = AccountWithMetadata {
+        account: Account {
+            program_owner: ProgramId::default(),
+            balance: 0,
+            data: Data::from(&PoolDefinition {
+                definition_token_a_id: IdForTests::token_a_definition_id(),
+                definition_token_b_id: IdForTests::token_b_definition_id(),
+                vault_a_id: IdForTests::vault_a_id(),
+                vault_b_id: IdForTests::vault_b_id(),
+                liquidity_pool_id: IdForTests::token_lp_definition_id(),
+                liquidity_pool_supply: MINIMUM_LIQUIDITY,
+                reserve_a: 1_000,
+                reserve_b: large_reserve,
+                fees: BalanceForTests::fee_tier(), ..Default::default() }),
+            nonce: Nonce(0),
+        },
+        is_authorized: true,
+        account_id: IdForTests::pool_definition_id(),
+    };
+
+    let vault_a = AccountWithMetadata {
+        account: Account {
+            program_owner: TOKEN_PROGRAM_ID,
+            balance: 0,
+            data: Data::from(&TokenHolding::Fungible {
+                definition_id: IdForTests::token_a_definition_id(),
+                balance: reserve_b,
+            }),
+            nonce: Nonce(0),
+        },
+        is_authorized: true,
+        account_id: IdForTests::vault_a_id(),
+    };
+
+    let vault_b = AccountWithMetadata {
+        account: Account {
+            program_owner: TOKEN_PROGRAM_ID,
+            balance: 0,
+            data: Data::from(&TokenHolding::Fungible {
+                definition_id: IdForTests::token_b_definition_id(),
+                balance: large_reserve,
+            }),
+            nonce: Nonce(0),
+        },
+        is_authorized: true,
+        account_id: IdForTests::vault_b_id(),
+    };
+
+    // Swap token_a in: withdraw_amount = reserve_b * effective_amount_in / (reserve_a +
+    // effective_amount_in) With fee_bps=30: effective_amount_in = 3 * 9970 / 10000 = 2
+    // reserve_b is large, so reserve_b * 2 overflows
+    let _result = swap_exact_input(
+        pool,
+        vault_a,
+        vault_b,
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        3,
+        1,
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[test]
+fn test_new_definition_supports_all_fee_tiers() {
+    let token_a = IdForTests::token_a_definition_id();
+    let token_b = IdForTests::token_b_definition_id();
+    for fees in [
+        FEE_TIER_BPS_1,
+        FEE_TIER_BPS_5,
+        FEE_TIER_BPS_30,
+        FEE_TIER_BPS_100,
+    ] {
+        // The pool PDA (and the vault/LP/lock PDAs derived from it) are now
+        // fee-tier-specific, so rebind the fixture account ids to this
+        // tier's PDAs before calling new_definition.
+        let pool_id = compute_pool_pda(AMM_PROGRAM_ID, token_a, token_b, fees);
+        let mut pool = AccountWithMetadataForTests::pool_definition_uninit();
+        pool.account_id = pool_id;
+        let mut vault_a = AccountWithMetadataForTests::vault_a_init();
+        vault_a.account_id = compute_vault_pda(AMM_PROGRAM_ID, pool_id, token_a);
+        let mut vault_b = AccountWithMetadataForTests::vault_b_init();
+        vault_b.account_id = compute_vault_pda(AMM_PROGRAM_ID, pool_id, token_b);
+        let mut pool_lp = AccountWithMetadataForTests::pool_lp_uninit();
+        pool_lp.account_id = compute_liquidity_token_pda(AMM_PROGRAM_ID, pool_id);
+        let mut lp_lock = AccountWithMetadataForTests::lp_lock_holding_uninit();
+        lp_lock.account_id = compute_lp_lock_holding_pda(AMM_PROGRAM_ID, pool_id);
+
+        let (post_states, _) = new_definition(
+            pool,
+            vault_a,
+            vault_b,
+            pool_lp,
+            lp_lock,
+            AccountWithMetadataForTests::user_holding_a(),
+            AccountWithMetadataForTests::user_holding_b(),
+            AccountWithMetadataForTests::user_holding_lp_uninit(),
+            NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+            NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+            fees,
+            AMM_PROGRAM_ID,
+        0i64,
+        );
+
+        let pool_post = post_states[0].clone();
+        let pool_def = PoolDefinition::try_from(&pool_post.account().data).unwrap();
+        assert_eq!(pool_def.fees, fees);
+    }
+}
+
+#[should_panic(expected = "Fee tier must be one of 1, 5, 30, or 100 basis points")]
+#[test]
+fn test_new_definition_rejects_unsupported_fee_tier() {
+    let _ = new_definition(
+        AccountWithMetadataForTests::pool_definition_uninit(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_uninit(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        2,
+        AMM_PROGRAM_ID,
+    0i64,
+    );
+}
+
+// --- Token program ownership validation tests ---
+
+#[should_panic(expected = "User Token A holding must be owned by the vault's Token Program")]
+#[test]
+fn test_add_liquidity_rejects_user_holding_a_wrong_program() {
+    let _ = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a_wrong_program(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "User Token B holding must be owned by the vault's Token Program")]
+#[test]
+fn test_add_liquidity_rejects_user_holding_b_wrong_program() {
+    let _ = add_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b_wrong_program(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "User Token A holding must be owned by the vault's Token Program")]
+#[test]
+fn test_remove_liquidity_rejects_user_holding_a_wrong_program() {
+    let _ = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a_wrong_program(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_with_balance(
+            BalanceForTests::remove_amount_lp(),
+        ),
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b_low(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "User Token B holding must be owned by the vault's Token Program")]
+#[test]
+fn test_remove_liquidity_rejects_user_holding_b_wrong_program() {
+    let _ = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b_wrong_program(),
+        AccountWithMetadataForTests::user_holding_lp_with_balance(
+            BalanceForTests::remove_amount_lp(),
+        ),
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b_low(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "Remove amount exceeds user LP balance")]
+#[test]
+fn test_remove_liquidity_rejects_amount_exceeding_user_lp_balance() {
+    let lp_balance = BalanceForTests::remove_amount_lp() - 1;
+    let _ = remove_liquidity(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_with_balance(lp_balance),
+        NonZero::new(BalanceForTests::remove_amount_lp()).unwrap(),
+        BalanceForTests::remove_min_amount_a(),
+        BalanceForTests::remove_min_amount_b_low(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "User Token A holding must be owned by the vault's Token Program")]
+#[test]
+fn test_swap_exact_input_rejects_user_holding_a_wrong_program() {
+    let _ = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a_wrong_program(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::min_amount_out(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "User Token B holding must be owned by the vault's Token Program")]
+#[test]
+fn test_swap_exact_input_rejects_user_holding_b_wrong_program() {
+    let _ = swap_exact_input(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b_wrong_program(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::min_amount_out(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "User Token A holding must be owned by the vault's Token Program")]
+#[test]
+fn test_swap_exact_output_rejects_user_holding_a_wrong_program() {
+    let _ = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_swap_exact_output_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a_wrong_program(),
+        AccountWithMetadataForTests::user_holding_b(),
+        166,
+        BalanceForTests::max_amount_in(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+#[should_panic(expected = "User Token B holding must be owned by the vault's Token Program")]
+#[test]
+fn test_swap_exact_output_rejects_user_holding_b_wrong_program() {
+    let _ = swap_exact_output(
+        AccountWithMetadataForTests::pool_definition_swap_exact_output_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b_wrong_program(),
+        166,
+        BalanceForTests::max_amount_in(),
+        IdForTests::token_a_definition_id(),
+    0i64,
+    );
+}
+
+/// RFP Reliability #1 — Pool state consistent under concurrent swaps.
+///
+/// The LEZ sequencer linearises transactions, so two "concurrent" swaps
+/// apply sequentially to the pool account. This stress test applies 200
+/// randomised swaps (deterministic LCG, both directions, varied amounts)
+/// to one pool and asserts after every swap: (1) the constant-product
+/// invariant with V2-style fee accrual (`k` monotonically grows),
+/// (2) token conservation on the input leg, (3) the on-chain
+/// cum_volume/cum_fees counters increment by exactly the right amounts.
+#[test]
+fn stress_concurrent_swaps_preserve_invariant_and_balance() {
+    let token_program_id = TOKEN_PROGRAM_ID;
+    let pool_id   = IdForTests::pool_definition_id();
+    let def_a     = IdForTests::token_a_definition_id();
+    let def_b     = IdForTests::token_b_definition_id();
+    let vault_a_id= IdForTests::vault_a_id();
+    let vault_b_id= IdForTests::vault_b_id();
+    let user_a_id = IdForTests::user_token_a_id();
+    let user_b_id = IdForTests::user_token_b_id();
+    let lp_id     = IdForTests::token_lp_definition_id();
+
+    let mut reserve_a: u128 = 5_000;
+    let mut reserve_b: u128 = 2_500;
+    let lp_supply = (reserve_a * reserve_b).isqrt();
+    let fee_bps: u128 = FEE_TIER_BPS_30;
+
+    let mut exp_vol_a: u128 = 0; let mut exp_vol_b: u128 = 0;
+    let mut exp_fee_a: u128 = 0; let mut exp_fee_b: u128 = 0;
+
+    let mut vault_a_balance = reserve_a;
+    let mut vault_b_balance = reserve_b;
+    let user_a_init_bal: u128 = 1_000_000_000;
+    let user_b_init_bal: u128 = 1_000_000_000;
+
+    let mut lcg: u64 = 0x4d8e_b2a3_5fc1_7d09;
+    let mut rng = || -> u64 { lcg = lcg.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407); lcg };
+
+    let pre_k = reserve_a.checked_mul(reserve_b).unwrap();
+    let mut last_k = pre_k;
+
+    let mut applied: u32 = 0;
+    for i in 0..200u32 {
+        let dir_a_in = (rng() & 1) == 0;
+        let (r_in, r_out) = if dir_a_in { (reserve_a, reserve_b) } else { (reserve_b, reserve_a) };
+        let frac_bp = 50u128 + (rng() % 450) as u128; // 50..500 bp of r_in
+        let swap_amount_in: u128 = (r_in * frac_bp / 10_000).max(50);
+        // Pre-compute the AMM's exact output for this swap; if it would
+        // round to 0 (tiny reserves or extreme skew), skip — the AMM
+        // correctly rejects zero-output swaps and this test is about the
+        // invariant for the swaps that DO happen.
+        let eff_in = swap_amount_in * (FEE_BPS_DENOMINATOR - fee_bps) / FEE_BPS_DENOMINATOR;
+        if eff_in == 0 { continue; }
+        let expected_out = r_out.checked_mul(eff_in).unwrap()
+            / (r_in.checked_add(eff_in).unwrap());
+        if expected_out == 0 { continue; }
+        let token_in_id = if dir_a_in { def_a } else { def_b };
+
+        let pool_pre = make_pool_account(
+            pool_id, def_a, def_b, vault_a_id, vault_b_id, lp_id,
+            reserve_a, reserve_b, lp_supply, fee_bps,
+            exp_vol_a, exp_vol_b, exp_fee_a, exp_fee_b,
+        );
+        let va = make_token_holding(vault_a_id, def_a, vault_a_balance, token_program_id, true);
+        let vb = make_token_holding(vault_b_id, def_b, vault_b_balance, token_program_id, true);
+        let ua = make_token_holding(user_a_id, def_a, user_a_init_bal, token_program_id, true);
+        let ub = make_token_holding(user_b_id, def_b, user_b_init_bal, token_program_id, true);
+
+        // min_out=0: this test exercises the AMM's invariants, not user
+        // slippage; we assert the strict invariant ourselves below.
+        let (post_states, _chained) = swap_exact_input(
+            pool_pre, va, vb, ua, ub, swap_amount_in, 0, token_in_id, 0i64,
+        );
+        let new_pool = PoolDefinition::try_from(&post_states[0].account().data)
+            .expect("post pool deserialise");
+
+        let k_new = new_pool.reserve_a.checked_mul(new_pool.reserve_b).unwrap();
+        assert!(k_new >= last_k, "iter {i}: k decreased ({last_k} -> {k_new})");
+
+        if dir_a_in {
+            assert_eq!(new_pool.reserve_a, reserve_a + swap_amount_in,
+                "iter {i}: reserve_a += swap_amount_in");
+        } else {
+            assert_eq!(new_pool.reserve_b, reserve_b + swap_amount_in,
+                "iter {i}: reserve_b += swap_amount_in");
+        }
+
+        let amount_out = if dir_a_in { reserve_b - new_pool.reserve_b }
+                         else        { reserve_a - new_pool.reserve_a };
+        let fee_charged = swap_amount_in -
+            (swap_amount_in * (FEE_BPS_DENOMINATOR - fee_bps) / FEE_BPS_DENOMINATOR);
+        if dir_a_in {
+            exp_vol_a += swap_amount_in; exp_vol_b += amount_out; exp_fee_a += fee_charged;
+        } else {
+            exp_vol_b += swap_amount_in; exp_vol_a += amount_out; exp_fee_b += fee_charged;
+        }
+        assert_eq!(new_pool.cum_volume_a, exp_vol_a, "iter {i} cum_volume_a");
+        assert_eq!(new_pool.cum_volume_b, exp_vol_b, "iter {i} cum_volume_b");
+        assert_eq!(new_pool.cum_fees_a, exp_fee_a, "iter {i} cum_fees_a");
+        assert_eq!(new_pool.cum_fees_b, exp_fee_b, "iter {i} cum_fees_b");
+
+        reserve_a = new_pool.reserve_a;
+        reserve_b = new_pool.reserve_b;
+        vault_a_balance = reserve_a;
+        vault_b_balance = reserve_b;
+        last_k = k_new;
+        applied += 1;
+    }
+    assert!(applied >= 100, "expected ≥100 swaps to apply (got {applied})");
+    assert!(last_k > pre_k, "k must strictly grow over the applied swaps");
+}
+
+fn make_pool_account(
+    pool_id: AccountId, def_a: AccountId, def_b: AccountId,
+    vault_a_id: AccountId, vault_b_id: AccountId, lp_id: AccountId,
+    reserve_a: u128, reserve_b: u128, lp_supply: u128, fees: u128,
+    cum_volume_a: u128, cum_volume_b: u128,
+    cum_fees_a: u128, cum_fees_b: u128,
+) -> AccountWithMetadata {
+    AccountWithMetadata {
+        account: Account {
+            program_owner: AMM_PROGRAM_ID,
+            balance: 0,
+            data: Data::from(&PoolDefinition {
+                definition_token_a_id: def_a,
+                definition_token_b_id: def_b,
+                vault_a_id, vault_b_id,
+                liquidity_pool_id: lp_id,
+                liquidity_pool_supply: lp_supply,
+                reserve_a, reserve_b,
+                fees,
+                cum_volume_a, cum_volume_b, cum_fees_a, cum_fees_b,
+                ..Default::default()
+            }),
+            nonce: Nonce(0),
+        },
+        is_authorized: true,
+        account_id: pool_id,
+    }
+}
+fn make_token_holding(
+    id: AccountId, def: AccountId, balance: u128,
+    token_program_id: ProgramId, authorized: bool,
+) -> AccountWithMetadata {
+    AccountWithMetadata {
+        account: Account {
+            program_owner: token_program_id,
+            balance: 0,
+            data: Data::from(&token_core::TokenHolding::Fungible {
+                definition_id: def, balance,
+            }),
+            nonce: Nonce(0),
+        },
+        is_authorized: authorized,
+        account_id: id,
+    }
+}

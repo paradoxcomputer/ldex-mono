@@ -1,0 +1,10 @@
+{
+  "name": "ldex_ui",
+  "version": "0.1.0",
+  "description": "LDEX mini-app UI (privacy-preserving DEX on LEZ)",
+  "type": "ui_qml",
+  "view": "Main.qml",
+  "dependencies": ["ldex_core"],
+  "category": "finance",
+  "icon": null
+}
