@@ -63,6 +63,25 @@ for sub in nssa nssa/core wallet common; do
     fi
 done
 
+# Drop risc0-zkvm's `bonsai` default feature in the LEZ workspace. The remote
+# Bonsai prover client (bonsai-sdk -> reqwest -> rustls -> ring) is never used,
+# and ring's C build can't cross-compile to the riscv32 zkVM guest target
+# (it emits a host-only `-m64`), so every guest fails to build with it on.
+# Idempotent: only rewrites the pristine rc3 line.
+LEZ_CARGO="$LINK/Cargo.toml"
+PRISTINE="risc0-zkvm = { version = \"3.0.5\", features = ['std'] }"
+FIXED="risc0-zkvm = { version = \"3.0.5\", default-features = false, features = ['std', 'client'] }"
+if grep -qF "$PRISTINE" "$LEZ_CARGO" 2>/dev/null; then
+    sed -i "s|$PRISTINE|$FIXED|" "$LEZ_CARGO"
+    echo "✓ patched _lez risc0-zkvm: dropped 'bonsai' default feature (no ring in guests)"
+elif grep -qF "$FIXED" "$LEZ_CARGO" 2>/dev/null; then
+    echo "✓ _lez risc0-zkvm already bonsai-free"
+else
+    echo "⚠ could not find the expected risc0-zkvm line in $LEZ_CARGO —" >&2
+    echo "  if guest builds fail with a ring '-m64' error, drop the 'bonsai'" >&2
+    echo "  default feature from risc0-zkvm there manually." >&2
+fi
+
 echo
 echo "Setup complete. Next:"
 echo "  1. cd $REPO"

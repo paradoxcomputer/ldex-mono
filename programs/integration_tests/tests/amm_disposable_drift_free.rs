@@ -21,7 +21,7 @@
 //! minimal pool against the *current* `PoolDefinition`/`TokenDefinition`.
 
 use amm_core::{
-    compute_liquidity_token_pda, compute_pool_pda, compute_vault_pda, PoolDefinition,
+    compute_liquidity_token_pda, compute_pool_pda, compute_vault_pda, PoolDefinition, CLOCK_01,
     FEE_BPS_DENOMINATOR, FEE_TIER_BPS_30,
 };
 use nssa::{
@@ -146,13 +146,14 @@ fn fungible_balance(state: &V03State, id: AccountId) -> u128 {
 }
 
 /// Public `SwapExactInput`. Account order is positional:
-/// `[pool, vault_a, vault_b, token_a_side_holding, token_b_side_holding]`.
-/// The signer is the input-side holding (the one matching `token_def_in`).
+/// `[pool, vault_a, vault_b, token_a_side_holding, token_b_side_holding, CLOCK_01]`.
+/// Both holdings co-sign: the input pays, and the (possibly fresh) output
+/// authorises its own `new_claimed_if_default` claim — exactly what the
+/// drift-free FFI does (wallet owns both A holdings' keys).
 fn swap(
     state: &mut V03State,
-    holding_a_side: AccountId,
-    holding_b_side: AccountId,
-    signer: &PrivateKey,
+    key_a_side: &PrivateKey,
+    key_b_side: &PrivateKey,
     token_def_in: AccountId,
     amount_in: u128,
     min_out: u128,
@@ -163,16 +164,20 @@ fn swap(
         token_definition_id_in: token_def_in,
         deadline: u64::MAX,
     };
-    let signer_id = id_of(signer);
-    let nonce = state.get_account_by_id(signer_id).nonce;
+    let (id_a, id_b) = (id_of(key_a_side), id_of(key_b_side));
+    let nonces = vec![
+        state.get_account_by_id(id_a).nonce,
+        state.get_account_by_id(id_b).nonce,
+    ];
     let message = public_transaction::Message::try_new(
         amm_program(),
-        vec![pool(), vault_a(), vault_b(), holding_a_side, holding_b_side],
-        vec![nonce],
+        vec![pool(), vault_a(), vault_b(), id_a, id_b, CLOCK_01],
+        nonces,
         instruction,
     )
     .unwrap();
-    let witness_set = public_transaction::WitnessSet::for_message(&message, &[signer]);
+    let witness_set =
+        public_transaction::WitnessSet::for_message(&message, &[key_a_side, key_b_side]);
     let tx = PublicTransaction::new(message, witness_set);
     state.transition_from_public_transaction(&tx, 0, 0).map(|_| ())
 }
@@ -185,19 +190,22 @@ fn expected_out_a_to_b(reserve_a: u128, reserve_b: u128, amount_in: u128) -> u12
 }
 
 #[test]
-fn public_swap_credits_a_fresh_output_holding() {
-    // Account A after the DESHIELD leg: token-A holding funded, token-B output
-    // holding (a_out) absent => default. The swap must initialise it.
+fn public_swap_credits_output_holding_at_spot() {
+    // Account A after the DESHIELD leg: token-A holding funded; token-B output
+    // holding (a_out) initialised (ldex amm asserts token-program ownership of
+    // both trader holdings, so the FFI inits a_out before the swap).
     let a_in = key(41);
-    let a_out = id_of(&key(42));
+    let a_out_key = key(42);
+    let a_out = id_of(&a_out_key);
     let mut state = base_state();
     state.force_insert_account(id_of(&a_in), fungible(def_a(), SWAP_IN));
+    state.force_insert_account(a_out, fungible(def_b(), 0));
 
-    swap(&mut state, id_of(&a_in), a_out, &a_in, def_a(), SWAP_IN, 0)
-        .expect("swap into a fresh output holding must succeed");
+    swap(&mut state, &a_in, &a_out_key, def_a(), SWAP_IN, 0)
+        .expect("swap into the output holding must succeed");
 
     let holding = TokenHolding::try_from(&state.get_account_by_id(a_out).data)
-        .expect("a_out auto-initialised as a fungible holding");
+        .expect("a_out is a fungible token-B holding");
     let TokenHolding::Fungible { definition_id, balance } = holding else {
         panic!("a_out must be fungible");
     };
@@ -210,26 +218,29 @@ fn public_swap_credits_a_fresh_output_holding() {
 #[test]
 fn public_swap_leg_is_drift_free_under_competing_swap() {
     let a_in = key(41); // account A input (token A), funded by deshield
-    let a_out = id_of(&key(42)); // account A output (token B), fresh
+    let a_out_key = key(42); // account A output (token B), fresh
+    let a_out = id_of(&a_out_key);
     let trader_b = key(50); // competing trader input (token B)
-    let trader_a = id_of(&key(51)); // competing trader output (token A), fresh
+    let trader_a_key = key(51); // competing trader output (token A), fresh
 
     let mut state = base_state();
     state.force_insert_account(id_of(&a_in), fungible(def_a(), SWAP_IN));
     state.force_insert_account(id_of(&trader_b), fungible(def_b(), 10_000));
+    // Output holdings initialised (ldex amm requires token-program ownership).
+    state.force_insert_account(a_out, fungible(def_b(), 0));
+    state.force_insert_account(id_of(&trader_a_key), fungible(def_a(), 0));
 
     // A COMPETING swap (B->A) moves the pool AFTER A's funds were deshielded
     // but BEFORE A's swap. Under the old in-proof disposable design this would
     // invalidate A's proof (committed pool pre-state != live state). As a
     // proofless public tx, A's swap simply re-prices against live reserves.
     let (ra0, rb0) = pool_reserves(&state);
-    swap(&mut state, trader_a, id_of(&trader_b), &trader_b, def_b(), SWAP_IN, 0)
-        .expect("competing swap");
+    swap(&mut state, &trader_a_key, &trader_b, def_b(), SWAP_IN, 0).expect("competing swap");
     let (ra1, rb1) = pool_reserves(&state);
     assert_ne!((ra0, rb0), (ra1, rb1), "competing swap must move the pool");
 
     // A's drift-free public swap leg against the MOVED pool.
-    swap(&mut state, id_of(&a_in), a_out, &a_in, def_a(), SWAP_IN, 0)
+    swap(&mut state, &a_in, &a_out_key, def_a(), SWAP_IN, 0)
         .expect("public swap leg must succeed against the live (moved) pool");
 
     let out_bal = fungible_balance(&state, a_out);

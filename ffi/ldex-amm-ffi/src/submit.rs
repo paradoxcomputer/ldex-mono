@@ -2326,6 +2326,8 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap(
         } else {
             return Err(LDEX_AMM_ERR_ACCOUNT);
         };
+        // Definition of the OUTPUT token (the side `a_out` receives).
+        let def_out = if def_a == tok_in { def_b } else { def_a };
         let mut wallet = p.wallet;
         let token_prog: ProgramWithDependencies = Program::token().into();
 
@@ -2368,12 +2370,46 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap(
             }
         }
 
+        // --- tx1b: INIT a_out as a token holding for the OUTPUT definition.
+        // amm_v2's swap asserts BOTH trader holdings are already owned by the
+        // token program; `a_in` was claimed by the deshield transfer above, but
+        // `a_out` is a fresh single-use account and must be initialised first
+        // (cheap public tx, no proof). ---
+        {
+            let token_pid = Program::token().id();
+            let nonces = wallet
+                .get_accounts_nonces(vec![a_out])
+                .await
+                .map_err(|_| LDEX_AMM_ERR_ACCOUNT)?;
+            let key = wallet
+                .storage()
+                .user_data
+                .get_pub_account_signing_key(a_out)
+                .ok_or(LDEX_AMM_ERR_KEY)?;
+            let msg = nssa::public_transaction::Message::try_new(
+                token_pid,
+                vec![def_out, a_out],
+                nonces,
+                token_core::Instruction::InitializeAccount,
+            )
+            .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
+            let ws = nssa::public_transaction::WitnessSet::for_message(&msg, &[key]);
+            let h = wallet
+                .sequencer_client
+                .send_transaction(NSSATransaction::Public(nssa::PublicTransaction::new(msg, ws)))
+                .await
+                .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
+            wallet
+                .poll_native_token_transfer(h)
+                .await
+                .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
+        }
+
         // --- tx2: PUBLIC SwapExactInput a_in -> a_out. Proofless, atomic
         // against live pool state, slippage-bounded by `min_amount_out` —
         // this is the leg that makes the whole op drift-free. Signer is
-        // `a_in` (deshielded, authorized); `a_out` may be default and is
-        // initialised by the token Transfer (`new_claimed_if_default`).
-        // 5-account list, NO Clock (amm_v2 skips the oracle). ---
+        // `a_in` (deshielded, authorized); `a_out` is the now-initialised
+        // output holding. 5-account list, NO Clock (amm_v2 skips the oracle). ---
         let swap_instr = amm_v2_core::Instruction::SwapExactInput {
             swap_amount_in,
             min_amount_out,
