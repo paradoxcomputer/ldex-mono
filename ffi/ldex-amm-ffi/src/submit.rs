@@ -2062,8 +2062,22 @@ pub unsafe extern "C" fn ldex_ata_create(
 // ProgramId. Same `PoolDefinition` data shape as the canonical AMM;
 // vault PDAs derive under amm_v2.
 
-/// amm_v2 combined disposable swap. Mirror of
-/// `ldex_amm_disposable_swap_exact_in` argument list MINUS
+/// amm_v2 combined disposable swap — SINGLE-PROOF (in-circuit) variant.
+///
+/// Runs deshield + AMM swap + re-shield inside ONE privacy STARK. This
+/// names the public pool PDA (+ vaults) as committed pre-states, so the
+/// sequencer re-derives them from LIVE chain state at submit and verifies
+/// the receipt against that: a competing swap that moves the pool during
+/// the minutes-long proof invalidates the receipt
+/// (`InvalidPrivacyPreservingProof`), forcing a re-prove. On a busy,
+/// bidirectional DEX pool that stale-out is near-certain under load.
+///
+/// Kept for callers who want MAXIMAL privacy (the swap stays hidden inside
+/// the proof) and can tolerate drift/re-proves. The default
+/// `ldex_amm_v2_disposable_swap` is the drift-free 3-tx variant; prefer it
+/// unless you specifically need the single-proof privacy profile.
+///
+/// Mirror of `ldex_amm_disposable_swap_exact_in` argument list MINUS
 /// `router_program_id` (amm_v2 IS the router+AMM combined), PLUS
 /// `amm_v2_program_id` to select the amm_v2 pool ecosystem.
 ///
@@ -2072,7 +2086,7 @@ pub unsafe extern "C" fn ldex_ata_create(
 /// readable bytes; `out_tx_hash` is 32 writable bytes.
 #[no_mangle]
 #[expect(clippy::too_many_arguments, reason = "fixed protocol account list")]
-pub unsafe extern "C" fn ldex_amm_v2_disposable_swap(
+pub unsafe extern "C" fn ldex_amm_v2_disposable_swap_inproof(
     config_path: *const c_char,
     storage_path: *const c_char,
     amm_v2_program_id: *const u8,
@@ -2198,6 +2212,263 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap(
             .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
         let mut out = [0u8; 32];
         let h: &[u8] = hash.as_ref();
+        if h.len() == 32 {
+            out.copy_from_slice(h);
+        }
+        Ok(out)
+    });
+    out32(res, out_tx_hash)
+}
+
+/// amm_v2 combined disposable swap — DRIFT-FREE 3-transaction variant
+/// (the default; replaces the former single-proof body, now preserved as
+/// [`ldex_amm_v2_disposable_swap_inproof`]).
+///
+/// The former design ran the AMM swap *inside* the privacy proof, naming
+/// the public pool PDA as a committed pre-state; a competing swap landing
+/// during the minutes-long proof invalidated the receipt (stale pool
+/// pre-state -> `InvalidPrivacyPreservingProof`). A shared DEX pool is
+/// bidirectional and hot, so under load that drift was near-certain.
+///
+/// This variant splits the op into three transactions so the ONLY pool
+/// interaction is a proofless PUBLIC swap, which the sequencer linearizes
+/// against live state and therefore cannot go stale:
+///   1. DESHIELD  user_in (PrivateOwned) -> a_in (Public)   [privacy proof, no pool]
+///   2. SWAP      a_in -> a_out via public SwapExactInput    [public tx, atomic, min_out]
+///   3. RESHIELD  a_out (Public) -> user_out (PrivateOwned)  [privacy proof, no pool]
+/// Steps 1 and 3 prove but touch only the user's own notes / fresh A
+/// holdings (no shared contention); step 2 prices against the live pool
+/// with `min_amount_out` slippage protection. The fresh `a_out` holding is
+/// auto-initialised by the swap's token `Transfer`
+/// (`new_claimed_if_default`), so no separate init tx is needed.
+///
+/// PRIVACY TRADE-OFF (deliberate): a 3-tx flow links a deshield and a
+/// reshield around an *observable* public swap, leaking more linkage than
+/// the single-proof design hid. Callers who need maximal privacy and can
+/// tolerate drift should call [`ldex_amm_v2_disposable_swap_inproof`].
+///
+/// ATOMICITY: three on-chain txs cannot be on-chain-atomic. This is
+/// best-effort, no-loss: if the public swap fails (e.g. slippage), the
+/// deshielded input is re-shielded back to `user_in` (rollback); if the
+/// final re-shield fails, the swapped output stays in the public `a_out`
+/// holding (recoverable via `ldex_token_shield`) and an error is returned.
+/// Funds are never destroyed, but a crash mid-sequence requires a manual
+/// resume from the A holdings.
+///
+/// Returns the re-shield (final) tx hash. Same argument shape as
+/// [`ldex_amm_v2_disposable_swap_inproof`] — existing callers are fixed
+/// transparently.
+///
+/// # Safety
+/// Strings NUL-terminated UTF-8; every `*_id`/`*_holding_*` arg is 32
+/// readable bytes; `out_tx_hash` is 32 writable bytes.
+#[no_mangle]
+#[expect(clippy::too_many_arguments, reason = "fixed protocol account list")]
+pub unsafe extern "C" fn ldex_amm_v2_disposable_swap(
+    config_path: *const c_char,
+    storage_path: *const c_char,
+    amm_v2_program_id: *const u8,
+    user_holding_a: *const u8,
+    user_holding_b: *const u8,
+    a_holding_a: *const u8,
+    a_holding_b: *const u8,
+    token_def_a: *const u8,
+    token_def_b: *const u8,
+    token_definition_in: *const u8,
+    swap_amount_in: u128,
+    min_amount_out: u128,
+    fees: u128,
+    deadline: u64,
+    out_tx_hash: *mut u8,
+) -> i32 {
+    let (Some(cfg), Some(store)) = (c_str(config_path), c_str(storage_path)) else {
+        return LDEX_AMM_ERR_UTF8;
+    };
+    let (Some(pid_b), Some(ua_b), Some(ub_b)) = (
+        read_id(amm_v2_program_id),
+        read_id(user_holding_a),
+        read_id(user_holding_b),
+    ) else {
+        return LDEX_AMM_ERR_NULL;
+    };
+    let (Some(aa_b), Some(ab_b), Some(in_b)) = (
+        read_id(a_holding_a),
+        read_id(a_holding_b),
+        read_id(token_definition_in),
+    ) else {
+        return LDEX_AMM_ERR_NULL;
+    };
+    let (Some(da_b), Some(db_b)) = (read_id(token_def_a), read_id(token_def_b)) else {
+        return LDEX_AMM_ERR_NULL;
+    };
+    if out_tx_hash.is_null() {
+        return LDEX_AMM_ERR_NULL;
+    }
+    let amm_v2_pid = program_id_from_bytes(pid_b);
+    let (uha, uhb) = (AccountId::new(ua_b), AccountId::new(ub_b));
+    let (a_a, a_b) = (AccountId::new(aa_b), AccountId::new(ab_b));
+    let tok_in = AccountId::new(in_b);
+    let (def_a, def_b) = (AccountId::new(da_b), AccountId::new(db_b));
+
+    let rt = match runtime() {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
+    let res: Result<[u8; 32], i32> = rt.block_on(async move {
+        let p = prep_private(&cfg, &store, amm_v2_pid, def_a, def_b, fees).await?;
+        // Resolve swap direction: which user/A holdings are the input vs
+        // output side. `a_a`/`a_b` are the fresh single-use account-A
+        // holdings for `def_a`/`def_b` respectively (caller-created).
+        let (user_in, user_out, a_in, a_out) = if def_a == tok_in {
+            (uha, uhb, a_a, a_b)
+        } else if def_b == tok_in {
+            (uhb, uha, a_b, a_a)
+        } else {
+            return Err(LDEX_AMM_ERR_ACCOUNT);
+        };
+        let mut wallet = p.wallet;
+        let token_prog: ProgramWithDependencies = Program::token().into();
+
+        // --- tx1: DESHIELD user_in (PrivateOwned) -> a_in (Public). One
+        // simple privacy proof; touches only the user's note + fresh A
+        // holding, so it cannot drift on pool state. ---
+        let deshield_data = Program::serialize_instruction(
+            token_core::Instruction::Transfer { amount_to_transfer: swap_amount_in },
+        )
+        .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
+        let (h1, secrets1) = wallet
+            .send_privacy_preserving_tx(
+                vec![
+                    PrivacyPreservingAccount::PrivateOwned(user_in),
+                    PrivacyPreservingAccount::Public(a_in),
+                ],
+                deshield_data,
+                &token_prog,
+            )
+            .await
+            .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
+        let tx1 = wallet
+            .poll_native_token_transfer(h1)
+            .await
+            .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
+        // Fold the spend into the local cache so `user_in`'s private balance
+        // is correct for any subsequent op (see `ldex_token_deshield`).
+        if let NSSATransaction::PrivacyPreserving(ppt) = tx1 {
+            if let Some(secret) = secrets1.into_iter().next() {
+                wallet
+                    .decode_insert_privacy_preserving_transaction_results(
+                        &ppt,
+                        &[AccDecodeData::Decode(secret, user_in)],
+                    )
+                    .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
+                wallet
+                    .store_persistent_data()
+                    .await
+                    .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
+            }
+        }
+
+        // --- tx2: PUBLIC SwapExactInput a_in -> a_out. Proofless, atomic
+        // against live pool state, slippage-bounded by `min_amount_out` —
+        // this is the leg that makes the whole op drift-free. Signer is
+        // `a_in` (deshielded, authorized); `a_out` may be default and is
+        // initialised by the token Transfer (`new_claimed_if_default`).
+        // 5-account list, NO Clock (amm_v2 skips the oracle). ---
+        let swap_instr = amm_v2_core::Instruction::SwapExactInput {
+            swap_amount_in,
+            min_amount_out,
+            token_definition_id_in: tok_in,
+            deadline,
+        };
+        if let Err(e) = finalize(
+            &wallet,
+            amm_v2_pid,
+            vec![p.pool, p.vault_a, p.vault_b, a_a, a_b],
+            &[a_in],
+            swap_instr,
+        )
+        .await
+        {
+            // ROLLBACK: the public swap failed, so re-shield the deshielded
+            // input back to the user's private holding rather than leave it
+            // stranded in the public `a_in`. Best-effort: if this also
+            // fails, funds remain in `a_in` (recoverable via
+            // `ldex_token_shield`).
+            let reshield_back = Program::serialize_instruction(
+                token_core::Instruction::Transfer { amount_to_transfer: swap_amount_in },
+            )
+            .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
+            if let Ok((hb, _)) = wallet
+                .send_privacy_preserving_tx(
+                    vec![
+                        PrivacyPreservingAccount::Public(a_in),
+                        PrivacyPreservingAccount::PrivateOwned(user_in),
+                    ],
+                    reshield_back,
+                    &token_prog,
+                )
+                .await
+            {
+                let _ = wallet.poll_native_token_transfer(hb).await;
+            }
+            return Err(e);
+        }
+
+        // --- read the realized swap output now sitting in the public a_out.
+        // Drift means the realized amount is pool-dependent; reshield exactly
+        // what landed (>= min_amount_out, enforced by the swap). ---
+        let out_acc = wallet
+            .get_account_public(a_out)
+            .await
+            .map_err(|_| LDEX_AMM_ERR_ACCOUNT)?;
+        let out_amount = match TokenHolding::try_from(&out_acc.data) {
+            Ok(TokenHolding::Fungible { balance, .. }) => balance,
+            _ => 0,
+        };
+        if out_amount == 0 {
+            return Err(LDEX_AMM_ERR_SUBMIT);
+        }
+
+        // --- tx3: RESHIELD a_out (Public) -> user_out (PrivateOwned). One
+        // simple privacy proof; no pool, cannot drift. ---
+        let reshield_data = Program::serialize_instruction(
+            token_core::Instruction::Transfer { amount_to_transfer: out_amount },
+        )
+        .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
+        let (h3, secrets3) = wallet
+            .send_privacy_preserving_tx(
+                vec![
+                    PrivacyPreservingAccount::Public(a_out),
+                    PrivacyPreservingAccount::PrivateOwned(user_out),
+                ],
+                reshield_data,
+                &token_prog,
+            )
+            .await
+            // Output is safe in the public `a_out` (recoverable via
+            // `ldex_token_shield`); surface the failure to the caller.
+            .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
+        let tx3 = wallet
+            .poll_native_token_transfer(h3)
+            .await
+            .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
+        if let NSSATransaction::PrivacyPreserving(ppt) = tx3 {
+            if let Some(secret) = secrets3.into_iter().next() {
+                wallet
+                    .decode_insert_privacy_preserving_transaction_results(
+                        &ppt,
+                        &[AccDecodeData::Decode(secret, user_out)],
+                    )
+                    .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
+                wallet
+                    .store_persistent_data()
+                    .await
+                    .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
+            }
+        }
+
+        let mut out = [0u8; 32];
+        let h: &[u8] = h3.as_ref();
         if h.len() == 32 {
             out.copy_from_slice(h);
         }

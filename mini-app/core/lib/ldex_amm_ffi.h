@@ -377,8 +377,12 @@ int32_t ldex_wlez_unwrap(const char *config_path,
  * canonical AMM) and have no on-chain TWAP oracle (drift-free).
  *
  * Setup: `ldex_amm_v2_new_pool` (public tx, no proof) creates an
- * amm_v2 pool. Then `ldex_amm_v2_disposable_swap` (privacy-preserving
- * tx, single STARK) runs a mode-2 swap against it. */
+ * amm_v2 pool. Then `ldex_amm_v2_disposable_swap` runs a mode-2 swap
+ * against it. As of the drift-free fix it executes as THREE txs
+ * (deshield / public swap / re-shield): the pool is touched only by a
+ * proofless public swap, so a competing swap mid-proof can no longer
+ * invalidate it. `ldex_amm_v2_disposable_swap_inproof` keeps the former
+ * single-STARK behaviour (maximal privacy, but drifts under contention). */
 
 int32_t ldex_amm_v2_new_pool(const char *config_path,
                              const char *storage_path,
@@ -391,6 +395,21 @@ int32_t ldex_amm_v2_new_pool(const char *config_path,
                              uint8_t *out_tx_hash);
 
 int32_t ldex_amm_v2_disposable_swap(
+    const char *config_path, const char *storage_path,
+    const uint8_t *amm_v2_program_id,
+    const uint8_t *user_holding_a, const uint8_t *user_holding_b,
+    const uint8_t *a_holding_a, const uint8_t *a_holding_b,
+    const uint8_t *token_def_a, const uint8_t *token_def_b,
+    const uint8_t *token_definition_in, ldex_u128 swap_amount_in,
+    ldex_u128 min_amount_out, ldex_u128 fees, uint64_t deadline,
+    uint8_t *out_tx_hash);
+
+/* Former single-STARK disposable swap: runs deshield + swap + re-shield
+ * inside ONE proof (maximal privacy, but the in-proof pool pre-state
+ * drifts under contention -> InvalidPrivacyPreservingProof). Same
+ * arguments as `ldex_amm_v2_disposable_swap`; prefer the latter unless you
+ * specifically need the single-proof privacy profile. */
+int32_t ldex_amm_v2_disposable_swap_inproof(
     const char *config_path, const char *storage_path,
     const uint8_t *amm_v2_program_id,
     const uint8_t *user_holding_a, const uint8_t *user_holding_b,

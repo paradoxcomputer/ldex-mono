@@ -27,7 +27,7 @@ pub use submit::{
     ldex_amm_private_add_liquidity, ldex_amm_private_remove_liquidity,
     ldex_amm_add_liquidity_ata, ldex_amm_private_swap_exact_in, ldex_amm_remove_liquidity,
     ldex_amm_v2_add_liquidity, ldex_amm_v2_add_liquidity_ata,
-    ldex_amm_v2_disposable_swap,
+    ldex_amm_v2_disposable_swap, ldex_amm_v2_disposable_swap_inproof,
     ldex_amm_v2_disposable_swap_native_in, ldex_amm_v2_disposable_swap_native_out,
     ldex_amm_v2_new_pool, ldex_amm_v2_new_pool_ata,
     ldex_amm_v2_private_swap_exact_in,
