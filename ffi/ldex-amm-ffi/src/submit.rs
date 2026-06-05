@@ -478,6 +478,30 @@ pub unsafe extern "C" fn ldex_amm_token_balance(
 ///
 /// # Safety
 /// id ptrs are 32 bytes; `out` has `cap` writable bytes.
+/// Read the off-chain reserve-feed CSV for (amm, a, b, fees) → parsed rows
+/// `(block_id, ms, reserve_a, reserve_b)`; empty if the file is absent/unreadable.
+/// Callers apply their own filtering/derivation. Shared by `ldex_amm_price_history`
+/// and `ldex_amm_volume_estimate` (was duplicated verbatim in both).
+fn read_reserve_feed(amm: &[u8], a: &[u8], b: &[u8], fees: u128) -> Vec<(u64, u128, f64, f64)> {
+    let h4 = |x: &[u8]| x[..4].iter().map(|y| format!("{y:02x}")).collect::<String>();
+    let dir = std::env::var("LDEX_PRICE_DIR").unwrap_or_else(|_| {
+        format!("{}/.ldex/price", std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()))
+    });
+    let path = format!("{}/{}_{}_{}_{}.csv", dir, h4(amm), h4(a), h4(b), fees);
+    std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.split(',');
+            let bid: u64 = it.next()?.parse().ok()?;
+            let ms: u128 = it.next()?.parse().ok()?;
+            let ra: f64 = it.next()?.parse().ok()?;
+            let rb: f64 = it.next()?.parse().ok()?;
+            Some((bid, ms, ra, rb))
+        })
+        .collect()
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn ldex_amm_price_history(
     amm_program_id: *const u8,
@@ -495,35 +519,9 @@ pub unsafe extern "C" fn ldex_amm_price_history(
     ) else {
         return LDEX_AMM_ERR_NULL;
     };
-    let h4 = |x: &[u8]| x[..4].iter().map(|y| format!("{y:02x}")).collect::<String>();
-    let dir = std::env::var("LDEX_PRICE_DIR").unwrap_or_else(|_| {
-        format!(
-            "{}/.ldex/price",
-            std::env::var("HOME").unwrap_or_else(|_| "/tmp".into())
-        )
-    });
-    let path = format!(
-        "{}/{}_{}_{}_{}.csv",
-        dir,
-        h4(&amm),
-        h4(&a),
-        h4(&b),
-        fees
-    );
-    let body = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut rows: Vec<(u64, u128, f64)> = body
-        .lines()
-        .filter_map(|l| {
-            let mut it = l.split(',');
-            let bid: u64 = it.next()?.parse().ok()?;
-            let ms: u128 = it.next()?.parse().ok()?;
-            let ra: f64 = it.next()?.parse().ok()?;
-            let rb: f64 = it.next()?.parse().ok()?;
-            if ra == 0.0 {
-                return None;
-            }
-            Some((bid, ms, rb / ra))
-        })
+    let mut rows: Vec<(u64, u128, f64)> = read_reserve_feed(&amm, &a, &b, fees)
+        .into_iter()
+        .filter_map(|(bid, ms, ra, rb)| (ra != 0.0).then_some((bid, ms, rb / ra)))
         .collect();
     let n = max_points.max(1) as usize;
     if rows.len() > n {
@@ -573,25 +571,9 @@ pub unsafe extern "C" fn ldex_amm_volume_estimate(
     ) else {
         return LDEX_AMM_ERR_NULL;
     };
-    let h4 = |x: &[u8]| x[..4].iter().map(|y| format!("{y:02x}")).collect::<String>();
-    let dir = std::env::var("LDEX_PRICE_DIR").unwrap_or_else(|_| {
-        format!(
-            "{}/.ldex/price",
-            std::env::var("HOME").unwrap_or_else(|_| "/tmp".into())
-        )
-    });
-    let path = format!("{}/{}_{}_{}_{}.csv", dir, h4(&amm), h4(&a), h4(&b), fees);
-    let body = std::fs::read_to_string(&path).unwrap_or_default();
-    let res: Vec<(f64, f64)> = body
-        .lines()
-        .filter_map(|l| {
-            let mut it = l.split(',');
-            let _bid: u64 = it.next()?.parse().ok()?;
-            let _ms: u128 = it.next()?.parse().ok()?;
-            let ra: f64 = it.next()?.parse().ok()?;
-            let rb: f64 = it.next()?.parse().ok()?;
-            Some((ra, rb))
-        })
+    let res: Vec<(f64, f64)> = read_reserve_feed(&amm, &a, &b, fees)
+        .into_iter()
+        .map(|(_bid, _ms, ra, rb)| (ra, rb))
         .collect();
     let (mut va, mut vb) = (0f64, 0f64);
     for w in res.windows(2) {
