@@ -1,5 +1,6 @@
 use amm_core::{
-    assert_supported_fee_tier, read_vault_fungible_balances, FEE_BPS_DENOMINATOR, MINIMUM_LIQUIDITY,
+    apply_swap_to_pool_def, assert_supported_fee_tier, read_vault_fungible_balances,
+    FEE_BPS_DENOMINATOR, MINIMUM_LIQUIDITY,
 };
 pub use amm_core::{compute_liquidity_token_pda_seed, compute_vault_pda_seed, PoolDefinition};
 use nssa_core::{
@@ -68,46 +69,15 @@ fn create_swap_post_states(
     // integral uses the correct price for the elapsed interval.
     let mut oracle_pre = pool_def_data.clone();
     oracle_pre.oracle_update(clock_ts);
-    let mut pool_post_definition = PoolDefinition {
-        reserve_a: pool_def_data
-            .reserve_a
-            .checked_add(deposit_a)
-            .expect("reserve_a + deposit_a overflows u128")
-            .checked_sub(withdraw_a)
-            .expect("reserve_a + deposit_a - withdraw_a underflows"),
-        reserve_b: pool_def_data
-            .reserve_b
-            .checked_add(deposit_b)
-            .expect("reserve_b + deposit_b overflows u128")
-            .checked_sub(withdraw_b)
-            .expect("reserve_b + deposit_b - withdraw_b underflows"),
-        ..pool_def_data
-    };
+    // Reserve + RFP Usability #3 volume/fee accumulators (shared helper —
+    // single source of truth). Applied to the pre-swap `pool_def_data`,
+    // then the oracle ring/cum/ts are layered on from `oracle_pre`.
+    let mut pool_post_definition =
+        apply_swap_to_pool_def(pool_def_data, deposit_a, withdraw_a, deposit_b, withdraw_b);
     pool_post_definition.price_a_cum_last = oracle_pre.price_a_cum_last;
     pool_post_definition.price_b_cum_last = oracle_pre.price_b_cum_last;
     pool_post_definition.block_ts_last = oracle_pre.block_ts_last;
     pool_post_definition.obs = oracle_pre.obs;
-
-    // RFP Usability #3 — exact on-chain aggregate volume + LP fee
-    // accumulators. For a token-A-in swap: deposit_a == swap_amount_in,
-    // withdraw_b == swap_amount_out (and deposit_b == withdraw_a == 0);
-    // symmetric for B-in. So `deposit + withdraw` for each side equals
-    // the token throughput in that swap. The fee is taken off the input
-    // side (the deposit) and accrues into reserves (LP-side, V2-style).
-    let fee_a = if deposit_a > 0 {
-        deposit_a - (deposit_a * (FEE_BPS_DENOMINATOR - pool_def_data.fees)
-            / FEE_BPS_DENOMINATOR)
-    } else { 0 };
-    let fee_b = if deposit_b > 0 {
-        deposit_b - (deposit_b * (FEE_BPS_DENOMINATOR - pool_def_data.fees)
-            / FEE_BPS_DENOMINATOR)
-    } else { 0 };
-    pool_post_definition.cum_volume_a = pool_def_data
-        .cum_volume_a.saturating_add(deposit_a).saturating_add(withdraw_a);
-    pool_post_definition.cum_volume_b = pool_def_data
-        .cum_volume_b.saturating_add(deposit_b).saturating_add(withdraw_b);
-    pool_post_definition.cum_fees_a = pool_def_data.cum_fees_a.saturating_add(fee_a);
-    pool_post_definition.cum_fees_b = pool_def_data.cum_fees_b.saturating_add(fee_b);
 
     pool_post.data = Data::from(&pool_post_definition);
 
@@ -307,48 +277,13 @@ fn create_swap_post_states_no_oracle(
     withdraw_b: u128,
 ) -> Vec<AccountPostState> {
     let mut pool_post = pool.account;
-    // Note the `..pool_def_data` spread below copies `price_a_cum_last`,
-    // `price_b_cum_last`, `block_ts_last`, `obs`, and other unchanged
-    // fields from pre to post. No oracle update; this is intentional
-    // (see `swap_exact_input_circuit` for rationale).
-    let mut pool_post_definition = PoolDefinition {
-        reserve_a: pool_def_data
-            .reserve_a
-            .checked_add(deposit_a)
-            .expect("reserve_a + deposit_a overflows u128")
-            .checked_sub(withdraw_a)
-            .expect("reserve_a + deposit_a - withdraw_a underflows"),
-        reserve_b: pool_def_data
-            .reserve_b
-            .checked_add(deposit_b)
-            .expect("reserve_b + deposit_b overflows u128")
-            .checked_sub(withdraw_b)
-            .expect("reserve_b + deposit_b - withdraw_b underflows"),
-        ..pool_def_data.clone()
-    };
-
-    // Cumulative volume + fee accumulators (RFP Usability #3) move
-    // identically to the oracle-updating path.
-    let fee_a = if deposit_a > 0 {
-        deposit_a - (deposit_a * (FEE_BPS_DENOMINATOR - pool_def_data.fees) / FEE_BPS_DENOMINATOR)
-    } else {
-        0
-    };
-    let fee_b = if deposit_b > 0 {
-        deposit_b - (deposit_b * (FEE_BPS_DENOMINATOR - pool_def_data.fees) / FEE_BPS_DENOMINATOR)
-    } else {
-        0
-    };
-    pool_post_definition.cum_volume_a = pool_def_data
-        .cum_volume_a
-        .saturating_add(deposit_a)
-        .saturating_add(withdraw_a);
-    pool_post_definition.cum_volume_b = pool_def_data
-        .cum_volume_b
-        .saturating_add(deposit_b)
-        .saturating_add(withdraw_b);
-    pool_post_definition.cum_fees_a = pool_def_data.cum_fees_a.saturating_add(fee_a);
-    pool_post_definition.cum_fees_b = pool_def_data.cum_fees_b.saturating_add(fee_b);
+    // No oracle update here (see `swap_exact_input_circuit` for rationale):
+    // the shared helper carries `price_a_cum_last`, `price_b_cum_last`,
+    // `block_ts_last`, `obs`, and every other unchanged field from pre to
+    // post untouched. Reserves + the RFP Usability #3 volume/fee
+    // accumulators move identically to the oracle-updating path.
+    let pool_post_definition =
+        apply_swap_to_pool_def(pool_def_data, deposit_a, withdraw_a, deposit_b, withdraw_b);
 
     pool_post.data = Data::from(&pool_post_definition);
 

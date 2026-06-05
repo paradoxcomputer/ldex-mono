@@ -16,7 +16,7 @@
 
 pub use private_swap_router_core as core;
 
-use amm_core::{Instruction as AmmInstruction, PoolDefinition, FEE_BPS_DENOMINATOR};
+use amm_core::{amm_exact_input_out, Instruction as AmmInstruction, PoolDefinition};
 use nssa_core::{
     account::{AccountId, AccountWithMetadata, Data},
     program::{AccountPostState, ChainedCall},
@@ -50,28 +50,6 @@ fn shift_balance(awm: &AccountWithMetadata, delta_pos: u128, sign_pos: bool) -> 
     }
     out.account.data = Data::from(&h);
     out
-}
-
-/// Mirror of `amm/src/swap.rs::swap_logic` pricing (floor-rounded,
-/// fee-adjusted constant product). MUST stay identical to the deployed
-/// AMM or the re-shield transfer will mismatch account A's real balance.
-fn amm_exact_input_out(
-    reserve_in: u128,
-    reserve_out: u128,
-    fee_bps: u128,
-    swap_amount_in: u128,
-) -> u128 {
-    let effective_in = swap_amount_in
-        .checked_mul(FEE_BPS_DENOMINATOR - fee_bps)
-        .expect("swap_amount_in * (FEE_BPS_DENOMINATOR - fee_bps) overflows u128")
-        / FEE_BPS_DENOMINATOR;
-    assert!(effective_in != 0, "Effective swap amount should be nonzero");
-    reserve_out
-        .checked_mul(effective_in)
-        .expect("reserve_out * effective_in overflows u128")
-        / reserve_in
-            .checked_add(effective_in)
-            .expect("reserve_in + effective_in overflows u128")
 }
 
 /// Orchestrate one atomic deshield → public AMM swap → re-shield.

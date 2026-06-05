@@ -15,8 +15,8 @@
 //! exclusively through ATAs.
 
 use amm_core::{
-    assert_supported_fee_tier, compute_vault_pda_seed, read_vault_fungible_balances,
-    FEE_BPS_DENOMINATOR, MINIMUM_LIQUIDITY, PoolDefinition,
+    apply_swap_to_pool_def, assert_supported_fee_tier, compute_vault_pda_seed,
+    read_vault_fungible_balances, FEE_BPS_DENOMINATOR, MINIMUM_LIQUIDITY, PoolDefinition,
 };
 use nssa_core::{
     account::{AccountId, AccountWithMetadata, Data},
@@ -146,25 +146,14 @@ pub fn swap_exact_input_ata(
     // On-chain oracle: integrate pre-swap reserves over [t_last, now].
     let mut oracle_pre = pool_def_data.clone();
     oracle_pre.oracle_update(clock_ts);
-    let mut pool_post_def = PoolDefinition {
-        reserve_a: pool_def_data.reserve_a + deposit_a - withdraw_a,
-        reserve_b: pool_def_data.reserve_b + deposit_b - withdraw_b,
-        ..pool_def_data.clone()
-    };
+    // Reserve + RFP Usability #3 volume/fee accumulators (shared helper —
+    // single source of truth), then layer the oracle ring/cum/ts on top.
+    let mut pool_post_def =
+        apply_swap_to_pool_def(pool_def_data, deposit_a, withdraw_a, deposit_b, withdraw_b);
     pool_post_def.price_a_cum_last = oracle_pre.price_a_cum_last;
     pool_post_def.price_b_cum_last = oracle_pre.price_b_cum_last;
     pool_post_def.block_ts_last = oracle_pre.block_ts_last;
     pool_post_def.obs = oracle_pre.obs;
-    let fee_a = if deposit_a > 0 {
-        deposit_a - (deposit_a * (FEE_BPS_DENOMINATOR - pool_def_data.fees) / FEE_BPS_DENOMINATOR)
-    } else { 0 };
-    let fee_b = if deposit_b > 0 {
-        deposit_b - (deposit_b * (FEE_BPS_DENOMINATOR - pool_def_data.fees) / FEE_BPS_DENOMINATOR)
-    } else { 0 };
-    pool_post_def.cum_volume_a = pool_def_data.cum_volume_a.saturating_add(deposit_a).saturating_add(withdraw_a);
-    pool_post_def.cum_volume_b = pool_def_data.cum_volume_b.saturating_add(deposit_b).saturating_add(withdraw_b);
-    pool_post_def.cum_fees_a = pool_def_data.cum_fees_a.saturating_add(fee_a);
-    pool_post_def.cum_fees_b = pool_def_data.cum_fees_b.saturating_add(fee_b);
 
     let mut pool_post = pool.account.clone();
     pool_post.data = Data::from(&pool_post_def);
@@ -275,25 +264,14 @@ pub fn swap_exact_output_ata(
     };
     let mut oracle_pre = pool_def_data.clone();
     oracle_pre.oracle_update(clock_ts);
-    let mut pool_post_def = PoolDefinition {
-        reserve_a: pool_def_data.reserve_a + deposit_a - withdraw_a,
-        reserve_b: pool_def_data.reserve_b + deposit_b - withdraw_b,
-        ..pool_def_data.clone()
-    };
+    // Reserve + RFP Usability #3 volume/fee accumulators (shared helper —
+    // single source of truth), then layer the oracle ring/cum/ts on top.
+    let mut pool_post_def =
+        apply_swap_to_pool_def(pool_def_data, deposit_a, withdraw_a, deposit_b, withdraw_b);
     pool_post_def.price_a_cum_last = oracle_pre.price_a_cum_last;
     pool_post_def.price_b_cum_last = oracle_pre.price_b_cum_last;
     pool_post_def.block_ts_last = oracle_pre.block_ts_last;
     pool_post_def.obs = oracle_pre.obs;
-    let fee_a = if deposit_a > 0 {
-        deposit_a - (deposit_a * (FEE_BPS_DENOMINATOR - pool_def_data.fees) / FEE_BPS_DENOMINATOR)
-    } else { 0 };
-    let fee_b = if deposit_b > 0 {
-        deposit_b - (deposit_b * (FEE_BPS_DENOMINATOR - pool_def_data.fees) / FEE_BPS_DENOMINATOR)
-    } else { 0 };
-    pool_post_def.cum_volume_a = pool_def_data.cum_volume_a.saturating_add(deposit_a).saturating_add(withdraw_a);
-    pool_post_def.cum_volume_b = pool_def_data.cum_volume_b.saturating_add(deposit_b).saturating_add(withdraw_b);
-    pool_post_def.cum_fees_a = pool_def_data.cum_fees_a.saturating_add(fee_a);
-    pool_post_def.cum_fees_b = pool_def_data.cum_fees_b.saturating_add(fee_b);
     let mut pool_post = pool.account.clone();
     pool_post.data = Data::from(&pool_post_def);
 

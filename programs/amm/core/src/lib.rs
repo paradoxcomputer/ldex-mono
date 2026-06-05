@@ -332,6 +332,97 @@ impl PoolDefinition {
 }
 
 pub const FEE_BPS_DENOMINATOR: u128 = 10_000;
+
+/// Constant-product swap pricing (floor-rounded, fee-adjusted): the single
+/// source of truth shared by the public AMM and every privacy re-shield
+/// path. The output `withdraw` amount **MUST** be computed here so a
+/// fee-rounding change can never desync the deployed AMM from a router's
+/// re-shield transfer (which would break the privacy invariant). Mirrors
+/// `amm/src/swap.rs::swap_logic` exactly (same order of operations, same
+/// `FEE_BPS_DENOMINATOR` floor division, same overflow guards).
+#[must_use]
+pub fn amm_exact_input_out(
+    reserve_in: u128,
+    reserve_out: u128,
+    fee_bps: u128,
+    swap_amount_in: u128,
+) -> u128 {
+    let effective_in = swap_amount_in
+        .checked_mul(FEE_BPS_DENOMINATOR - fee_bps)
+        .expect("swap_amount_in * (FEE_BPS_DENOMINATOR - fee_bps) overflows u128")
+        / FEE_BPS_DENOMINATOR;
+    assert!(effective_in != 0, "Effective swap amount should be nonzero");
+    reserve_out
+        .checked_mul(effective_in)
+        .expect("reserve_out * effective_in overflows u128")
+        / reserve_in
+            .checked_add(effective_in)
+            .expect("reserve_in + effective_in overflows u128")
+}
+
+/// Apply a completed swap's token movements to the pool's reserve, volume,
+/// and fee accumulators — the single source of truth for the post-state
+/// pool math shared by every swap site (public, ATA, and private/
+/// disposable). For a token-A-in swap `deposit_a == swap_amount_in` and
+/// `withdraw_b == swap_amount_out` (the other two are 0); symmetric for
+/// B-in. So `deposit + withdraw` per side equals that token's throughput.
+///
+/// Touches ONLY `reserve_a`, `reserve_b`, `cum_volume_a`, `cum_volume_b`,
+/// `cum_fees_a`, `cum_fees_b`. Every other field (including the oracle
+/// ring `obs`, `price_*_cum_last`, and `block_ts_last`) is carried over
+/// from `pool_def` unchanged; callers that update the oracle do so by
+/// layering it on the returned value (or on `pool_def` beforehand).
+///
+/// The fee is taken off the input side (the deposit) and accrues into the
+/// reserves via invariant growth (LP-side, V2-style); `cum_fees_*` records
+/// the explicit floor-rounded fee `deposit - deposit*(DENOM-fees)/DENOM`.
+#[must_use]
+pub fn apply_swap_to_pool_def(
+    pool_def: PoolDefinition,
+    deposit_a: u128,
+    withdraw_a: u128,
+    deposit_b: u128,
+    withdraw_b: u128,
+) -> PoolDefinition {
+    let fee_a = if deposit_a > 0 {
+        deposit_a - (deposit_a * (FEE_BPS_DENOMINATOR - pool_def.fees) / FEE_BPS_DENOMINATOR)
+    } else {
+        0
+    };
+    let fee_b = if deposit_b > 0 {
+        deposit_b - (deposit_b * (FEE_BPS_DENOMINATOR - pool_def.fees) / FEE_BPS_DENOMINATOR)
+    } else {
+        0
+    };
+    let reserve_a = pool_def
+        .reserve_a
+        .checked_add(deposit_a)
+        .expect("reserve_a + deposit_a overflows u128")
+        .checked_sub(withdraw_a)
+        .expect("reserve_a + deposit_a - withdraw_a underflows");
+    let reserve_b = pool_def
+        .reserve_b
+        .checked_add(deposit_b)
+        .expect("reserve_b + deposit_b overflows u128")
+        .checked_sub(withdraw_b)
+        .expect("reserve_b + deposit_b - withdraw_b underflows");
+    PoolDefinition {
+        reserve_a,
+        reserve_b,
+        cum_volume_a: pool_def
+            .cum_volume_a
+            .saturating_add(deposit_a)
+            .saturating_add(withdraw_a),
+        cum_volume_b: pool_def
+            .cum_volume_b
+            .saturating_add(deposit_b)
+            .saturating_add(withdraw_b),
+        cum_fees_a: pool_def.cum_fees_a.saturating_add(fee_a),
+        cum_fees_b: pool_def.cum_fees_b.saturating_add(fee_b),
+        ..pool_def
+    }
+}
+
 pub const FEE_TIER_BPS_1: u128 = 1;
 pub const FEE_TIER_BPS_5: u128 = 5;
 pub const FEE_TIER_BPS_30: u128 = 30;
