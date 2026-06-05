@@ -20,6 +20,10 @@ mod amm {
     /// Defaults to 0 if the account isn't a valid `ClockData` (the
     /// oracle then no-ops until a real Clock is present).
     fn clock_ms(clock: &AccountWithMetadata) -> i64 {
+        // Only trust the canonical sequencer Clock. Without this an attacker can
+        // pass any account they shaped into the clock slot and feed the TWAP
+        // oracle an arbitrary timestamp (poison/freeze the cumulative price).
+        assert!(clock.account_id == amm_core::CLOCK_01, "clock account must be CLOCK_01");
         <amm_core::ClockData as borsh::BorshDeserialize>::try_from_slice(
             clock.account.data.as_ref(),
         )

@@ -293,8 +293,11 @@ impl PoolDefinition {
     /// interval). Idempotent within a block (dt==0 ⇒ no-op). Wrapping
     /// arithmetic — readers recover deltas via modular subtraction.
     ///
-    /// Precision/scale assumption: reserves < 2^64 (Q64.64 headroom in
-    /// u128). Our token scale satisfies this; documented in §5.11③.
+    /// Precision/scale requirement: reserves < 2^64 (Q64.64 headroom in u128).
+    /// Enforced at runtime below — `reserve << 64` would otherwise silently wrap
+    /// in the release guest (overflow-checks off) and corrupt the cumulative
+    /// price. Realistic reserves are far below this bound, so the guard never
+    /// fires in practice; it fails closed if the assumption is ever violated.
     pub fn oracle_update(&mut self, now_ms: i64) {
         if self.reserve_a == 0 || self.reserve_b == 0 {
             self.block_ts_last = now_ms;
@@ -305,6 +308,12 @@ impl PoolDefinition {
             return;
         }
         let dt = dt as u128;
+        // Hard domain guard (NOT debug_assert — that is compiled out of the
+        // release guest): a reserve >= 2^64 would overflow the `<< 64` below.
+        assert!(
+            self.reserve_a < (1u128 << 64) && self.reserve_b < (1u128 << 64),
+            "oracle reserve exceeds the 2^64 Q64.64 domain"
+        );
         let price_a = (self.reserve_b << 64) / self.reserve_a; // price A in B, Q64.64
         let price_b = (self.reserve_a << 64) / self.reserve_b; // price B in A, Q64.64
         self.price_a_cum_last = self.price_a_cum_last.wrapping_add(price_a.wrapping_mul(dt));

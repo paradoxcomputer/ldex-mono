@@ -47,10 +47,6 @@ fn validate_swap_setup(
 
 /// Creates post-state and returns reserves after swap.
 #[expect(clippy::too_many_arguments, reason = "TODO: Fix later")]
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "consistent with codebase style"
-)]
 fn create_swap_post_states(
     pool: AccountWithMetadata,
     pool_def_data: PoolDefinition,

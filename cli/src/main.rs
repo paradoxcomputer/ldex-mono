@@ -693,9 +693,12 @@ fn cmd_quote(env: &Env, pay: &str, get: &str, amt: u128, fee: u128) -> Result<()
     let ra: u128 = p["reserve_a"].as_str().unwrap_or("0").parse().unwrap_or(0);
     let rb: u128 = p["reserve_b"].as_str().unwrap_or("0").parse().unwrap_or(0);
     let (r_in, r_out) = if pay_is_a { (ra, rb) } else { (rb, ra) };
+    if amt == 0 || r_in == 0 || r_out == 0 {
+        return Err("empty pool or zero amount: cannot quote".into());
+    }
     // effective_in = floor(amt * (10000-fee) / 10000)
     let eff_in = amt.saturating_mul(10_000u128.saturating_sub(fee)) / 10_000;
-    let out = (r_out * eff_in) / (r_in + eff_in);
+    let out = r_out.saturating_mul(eff_in) / r_in.saturating_add(eff_in);
     let price_now = if pay_is_a { rb as f64 / ra as f64 } else { ra as f64 / rb as f64 };
     let price_eff = out as f64 / amt as f64;
     let impact = (1.0 - price_eff / price_now) * 100.0;
