@@ -1,5 +1,5 @@
 use amm_core::{
-    PoolDefinition, FEE_TIER_BPS_1, FEE_TIER_BPS_100, FEE_TIER_BPS_30, FEE_TIER_BPS_5,
+    PoolDefinition, CLOCK_01, FEE_TIER_BPS_1, FEE_TIER_BPS_100, FEE_TIER_BPS_30, FEE_TIER_BPS_5,
     MINIMUM_LIQUIDITY,
 };
 use nssa::{
@@ -317,6 +317,7 @@ impl Accounts {
                 reserve_a: Balances::vault_a_init(),
                 reserve_b: Balances::vault_b_init(),
                 fees: Balances::fee_tier(),
+                ..Default::default()
             }),
             nonce: Nonce(0),
         }
@@ -425,6 +426,13 @@ impl Accounts {
                 reserve_a: Balances::reserve_a_swap_1(),
                 reserve_b: Balances::reserve_b_swap_1(),
                 fees: Balances::fee_tier(),
+                // RFP Usability #3 accumulators after a single token-B-in swap
+                // of 1_000: throughput is 1_000 B in / 1_425 A out, fee 3 B.
+                cum_volume_a: 1_425,
+                cum_volume_b: 1_000,
+                cum_fees_a: 0,
+                cum_fees_b: 3,
+                ..Default::default()
             }),
             nonce: Nonce(0),
         }
@@ -492,6 +500,13 @@ impl Accounts {
                 reserve_a: Balances::reserve_a_swap_2(),
                 reserve_b: Balances::reserve_b_swap_2(),
                 fees: Balances::fee_tier(),
+                // RFP Usability #3 accumulators after a single token-A-in swap
+                // of 1_000: throughput is 1_000 A in / 415 B out, fee 3 A.
+                cum_volume_a: 1_000,
+                cum_volume_b: 415,
+                cum_fees_a: 3,
+                cum_fees_b: 0,
+                ..Default::default()
             }),
             nonce: Nonce(0),
         }
@@ -559,6 +574,7 @@ impl Accounts {
                 reserve_a: Balances::vault_a_add(),
                 reserve_b: Balances::vault_b_add(),
                 fees: Balances::fee_tier(),
+                ..Default::default()
             }),
             nonce: Nonce(0),
         }
@@ -651,6 +667,7 @@ impl Accounts {
                 reserve_a: Balances::vault_a_remove(),
                 reserve_b: Balances::vault_b_remove(),
                 fees: Balances::fee_tier(),
+                ..Default::default()
             }),
             nonce: Nonce(0),
         }
@@ -780,6 +797,7 @@ impl Accounts {
                 reserve_a: 0,
                 reserve_b: 0,
                 fees: Balances::fee_tier(),
+                ..Default::default()
             }),
             nonce: Nonce(0),
         }
@@ -872,6 +890,7 @@ impl Accounts {
                 reserve_a: Balances::vault_a_init(),
                 reserve_b: Balances::vault_b_init(),
                 fees: Balances::fee_tier(),
+                ..Default::default()
             }),
             nonce: Nonce(0),
         }
@@ -888,6 +907,34 @@ impl Accounts {
             nonce: Nonce(0),
         }
     }
+
+    /// Canonical sequencer Clock account (`CLOCK_01`). Token-less; its data
+    /// is a borsh `amm_core::ClockData { block_id, timestamp }`. Seeded with
+    /// `timestamp == 0` to match the genesis block time the tests transition
+    /// at (`transition_from_public_transaction(.., 0, 0)`): with the pool
+    /// fixtures' `block_ts_last == 0`, `oracle_update` sees `dt == 0` and
+    /// no-ops, so the threaded Clock feeds the oracle without perturbing the
+    /// exact pool post-states the assertions pin. `ClockData` derives only
+    /// `BorshDeserialize`, so its 16-byte borsh layout (u64 LE block_id then
+    /// i64 LE timestamp) is built directly.
+    fn clock() -> Account {
+        let mut bytes = Vec::with_capacity(16);
+        bytes.extend_from_slice(&0u64.to_le_bytes()); // block_id
+        bytes.extend_from_slice(&0i64.to_le_bytes()); // timestamp (ms)
+        Account {
+            program_owner: Ids::amm_program(),
+            balance: 0_u128,
+            data: Data::try_from(bytes).expect("clock data fits"),
+            nonce: Nonce(0),
+        }
+    }
+}
+
+/// Seed the canonical `CLOCK_01` Clock account into a test state. Every
+/// mutating AMM instruction now threads this as its final account (read-only
+/// oracle input, echoed back unchanged as a post-state by the guest).
+fn seed_clock(state: &mut V03State) {
+    state.force_insert_account(CLOCK_01, Accounts::clock());
 }
 
 fn deploy_programs(state: &mut V03State) {
@@ -928,6 +975,7 @@ fn state_for_amm_tests() -> V03State {
     state.force_insert_account(Ids::user_lp(), Accounts::user_lp_holding());
     state.force_insert_account(Ids::vault_a(), Accounts::vault_a_init());
     state.force_insert_account(Ids::vault_b(), Accounts::vault_b_init());
+    seed_clock(&mut state);
     state
 }
 
@@ -944,6 +992,7 @@ fn state_for_amm_tests_with_new_def() -> V03State {
     );
     state.force_insert_account(Ids::user_a(), Accounts::user_a_holding());
     state.force_insert_account(Ids::user_b(), Accounts::user_b_holding());
+    seed_clock(&mut state);
     state
 }
 
@@ -980,6 +1029,7 @@ fn try_execute_new_definition(
             Ids::user_a(),
             Ids::user_b(),
             Ids::user_lp(),
+            CLOCK_01,
         ],
         if authorize_user_lp {
             vec![
@@ -1030,6 +1080,7 @@ fn execute_swap_a_to_b(state: &mut V03State, swap_amount_in: u128, min_amount_ou
             Ids::vault_b(),
             Ids::user_a(),
             Ids::user_b(),
+            CLOCK_01,
         ],
         vec![current_nonce(state, Ids::user_a())],
         instruction,
@@ -1058,6 +1109,7 @@ fn execute_swap_b_to_a(state: &mut V03State, swap_amount_in: u128, min_amount_ou
             Ids::vault_b(),
             Ids::user_a(),
             Ids::user_b(),
+            CLOCK_01,
         ],
         vec![current_nonce(state, Ids::user_b())],
         instruction,
@@ -1093,6 +1145,7 @@ fn execute_add_liquidity(
             Ids::user_a(),
             Ids::user_b(),
             Ids::user_lp(),
+            CLOCK_01,
         ],
         vec![
             current_nonce(state, Ids::user_a()),
@@ -1132,6 +1185,7 @@ fn execute_remove_liquidity(
             Ids::user_a(),
             Ids::user_b(),
             Ids::user_lp(),
+            CLOCK_01,
         ],
         vec![current_nonce(state, Ids::user_lp())],
         instruction,
@@ -1196,6 +1250,7 @@ fn amm_remove_liquidity() {
             Ids::user_a(),
             Ids::user_b(),
             Ids::user_lp(),
+            CLOCK_01,
         ],
         vec![Nonce(0)],
         instruction,
@@ -1259,6 +1314,7 @@ fn amm_remove_liquidity_insufficient_user_lp_fails() {
             Ids::user_a(),
             Ids::user_b(),
             Ids::user_lp(),
+            CLOCK_01,
         ],
         vec![Nonce(0)],
         instruction,
@@ -1436,6 +1492,7 @@ fn amm_new_definition_supports_all_fee_tiers() {
                 Ids::user_a(),
                 Ids::user_b(),
                 Ids::user_lp(),
+                CLOCK_01,
             ],
             vec![
                 current_nonce(&state, Ids::user_a()),
@@ -1529,6 +1586,7 @@ fn amm_add_liquidity() {
             Ids::user_a(),
             Ids::user_b(),
             Ids::user_lp(),
+            CLOCK_01,
         ],
         vec![Nonce(0), Nonce(0)],
         instruction,
@@ -1590,6 +1648,7 @@ fn amm_swap_b_to_a() {
             Ids::vault_b(),
             Ids::user_a(),
             Ids::user_b(),
+            CLOCK_01,
         ],
         vec![Nonce(0)],
         instruction,
@@ -1642,6 +1701,7 @@ fn amm_swap_a_to_b() {
             Ids::vault_b(),
             Ids::user_a(),
             Ids::user_b(),
+            CLOCK_01,
         ],
         vec![Nonce(0)],
         instruction,
@@ -1748,6 +1808,7 @@ fn amm_swap_rejects_expired_deadline() {
             Ids::vault_b(),
             Ids::user_a(),
             Ids::user_b(),
+            CLOCK_01,
         ],
         vec![Nonce(0)],
         instruction,
@@ -1784,6 +1845,7 @@ fn amm_swap_exact_output_rejects_expired_deadline() {
             Ids::vault_b(),
             Ids::user_a(),
             Ids::user_b(),
+            CLOCK_01,
         ],
         vec![current_nonce(&state, Ids::user_a())],
         instruction,
@@ -1822,6 +1884,7 @@ fn amm_add_liquidity_rejects_expired_deadline() {
             Ids::user_a(),
             Ids::user_b(),
             Ids::user_lp(),
+            CLOCK_01,
         ],
         vec![
             current_nonce(&state, Ids::user_a()),
@@ -1864,6 +1927,7 @@ fn amm_remove_liquidity_rejects_expired_deadline() {
             Ids::user_a(),
             Ids::user_b(),
             Ids::user_lp(),
+            CLOCK_01,
         ],
         vec![current_nonce(&state, Ids::user_lp())],
         instruction,
@@ -1903,6 +1967,7 @@ fn amm_new_definition_rejects_expired_deadline() {
             Ids::user_a(),
             Ids::user_b(),
             Ids::user_lp(),
+            CLOCK_01,
         ],
         vec![
             current_nonce(&state, Ids::user_a()),
