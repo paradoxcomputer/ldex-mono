@@ -86,6 +86,47 @@ mod amm {
             .with_timestamp_validity_window(..deadline))
     }
 
+    /// Like `new_definition`, but pins the submitter-supplied `ata_program_id`
+    /// into the pool so its ATA-routed ops become reachable (the pin asserts).
+    #[instruction]
+    pub fn new_definition_ata(
+        ctx: ProgramContext,
+        pool: AccountWithMetadata,
+        vault_a: AccountWithMetadata,
+        vault_b: AccountWithMetadata,
+        pool_definition_lp: AccountWithMetadata,
+        lp_lock_holding: AccountWithMetadata,
+        user_holding_a: AccountWithMetadata,
+        user_holding_b: AccountWithMetadata,
+        user_holding_lp: AccountWithMetadata,
+        clock: AccountWithMetadata,
+        token_a_amount: u128,
+        token_b_amount: u128,
+        fees: u128,
+        ata_program_id: nssa_core::program::ProgramId,
+        deadline: u64,
+    ) -> SpelResult {
+        let clock_ts = clock_ms(&clock);
+        let (post_states, chained_calls) = amm_program::new_definition::new_definition_ata(
+            pool,
+            vault_a,
+            vault_b,
+            pool_definition_lp,
+            lp_lock_holding,
+            user_holding_a,
+            user_holding_b,
+            user_holding_lp,
+            NonZeroU128::new(token_a_amount).expect("token_a_amount must be nonzero"),
+            NonZeroU128::new(token_b_amount).expect("token_b_amount must be nonzero"),
+            fees,
+            ctx.self_program_id,
+            ata_program_id,
+            clock_ts,
+        );
+        Ok(spel_framework::SpelOutput::execute(echo_clock(post_states, clock), chained_calls)
+            .with_timestamp_validity_window(..deadline))
+    }
+
     /// Adds liquidity to the Pool.
     #[instruction]
     pub fn add_liquidity(

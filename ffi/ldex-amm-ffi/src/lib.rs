@@ -21,7 +21,7 @@ mod submit;
 mod wlez;
 pub use submit::{
     ldex_amm_add_liquidity, ldex_amm_disposable_swap_exact_in,
-    ldex_amm_new_pool,
+    ldex_amm_new_pool, ldex_amm_new_pool_ata,
     ldex_amm_init_token_holding, ldex_amm_onchain_price_history, ldex_amm_pool_info,
     ldex_amm_price_history,
     ldex_amm_private_add_liquidity, ldex_amm_private_remove_liquidity,

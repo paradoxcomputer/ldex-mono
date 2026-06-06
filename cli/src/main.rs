@@ -54,6 +54,7 @@ extern "C" {
         out: *mut u8, cap: usize) -> i32;
     fn ldex_amm_v2_new_pool_ata(
         cfg: *const i8, store: *const i8,
+        amm_v2_program_id: *const u8,
         owner: *const u8, user_holding_a: *const u8, user_holding_b: *const u8,
         amount_a: u128, amount_b: u128, fees: u128,
         deadline: u64, out_tx: *mut u8) -> i32;
@@ -67,6 +68,7 @@ extern "C" {
         deadline: u64, out_tx: *mut u8) -> i32;
     fn ldex_amm_v2_add_liquidity_ata(
         cfg: *const i8, store: *const i8,
+        amm_v2_program_id: *const u8,
         owner: *const u8,
         token_def_a: *const u8, token_def_b: *const u8,
         min_amount_liquidity: u128,
@@ -74,6 +76,7 @@ extern "C" {
         fees: u128, deadline: u64, out_tx: *mut u8) -> i32;
     fn ldex_amm_v2_remove_liquidity_ata(
         cfg: *const i8, store: *const i8,
+        amm_v2_program_id: *const u8,
         owner: *const u8,
         token_def_a: *const u8, token_def_b: *const u8,
         remove_liquidity_amount: u128,
@@ -81,6 +84,7 @@ extern "C" {
         fees: u128, deadline: u64, out_tx: *mut u8) -> i32;
     fn ldex_amm_v2_private_swap_exact_in(
         cfg: *const i8, store: *const i8,
+        amm_v2_program_id: *const u8,
         user_holding_a: *const u8, user_holding_b: *const u8,
         token_def_a: *const u8, token_def_b: *const u8,
         token_definition_in: *const u8,
@@ -88,6 +92,7 @@ extern "C" {
         deadline: u64, out_tx: *mut u8) -> i32;
     fn ldex_amm_v2_disposable_swap(
         cfg: *const i8, store: *const i8,
+        amm_v2_program_id: *const u8,
         user_holding_a: *const u8, user_holding_b: *const u8,
         a_holding_a: *const u8, a_holding_b: *const u8,
         token_def_a: *const u8, token_def_b: *const u8,
@@ -96,6 +101,7 @@ extern "C" {
         deadline: u64, out_tx: *mut u8) -> i32;
     fn ldex_amm_v2_private_add_liquidity(
         cfg: *const i8, store: *const i8,
+        amm_v2_program_id: *const u8,
         user_holding_a: *const u8, user_holding_b: *const u8, user_holding_lp: *const u8,
         token_def_a: *const u8, token_def_b: *const u8,
         min_amount_liquidity: u128,
@@ -103,6 +109,7 @@ extern "C" {
         fees: u128, deadline: u64, out_tx: *mut u8) -> i32;
     fn ldex_amm_v2_private_remove_liquidity(
         cfg: *const i8, store: *const i8,
+        amm_v2_program_id: *const u8,
         user_holding_a: *const u8, user_holding_b: *const u8, user_holding_lp: *const u8,
         token_def_a: *const u8, token_def_b: *const u8,
         remove_liquidity_amount: u128,
@@ -782,22 +789,31 @@ fn cmd_swap(env: &Env, pay: &str, get: &str, amount: u128,
             mode: &str, fee: u128, slip_pct: f64) -> Result<(), String> {
     let tp = resolve_token(env, pay)?;
     let tg = resolve_token(env, get)?;
-    // Derive a min-out from quote * (1 - slippage).
-    let mut q = pool_info_json(env, &tp.def_id, &tg.def_id, fee);
-    let mut pay_is_a = true;
+    // Derive a min-out from quote * (1 - slippage). The pool PDA is
+    // order-independent (the seed sorts the two def ids), so a single
+    // probe returns the canonical pool regardless of (pay, get) order;
+    // `pool_info` reports the pool's *stored* token_a via `token_a_def`.
+    // `pay_is_a` must reflect that stored leg order — NOT the probe arg
+    // order — so reserve_in/out (and thus min_out) and the (def_a, def_b)
+    // we pass to the swap FFI all line up with the pool's canonical token A.
+    let q = pool_info_json(env, &tp.def_id, &tg.def_id, fee);
     if !q.get("exists").and_then(|v| v.as_bool()).unwrap_or(false) {
-        q = pool_info_json(env, &tg.def_id, &tp.def_id, fee);
-        pay_is_a = false;
-        if !q.get("exists").and_then(|v| v.as_bool()).unwrap_or(false) {
-            return Err(format!("no pool for {pay}/{get} at fee={fee}"));
-        }
+        return Err(format!("no pool for {pay}/{get} at fee={fee}"));
     }
+    let pay_is_a = q.get("token_a_def").and_then(|v| v.as_str()) == Some(hx(&tp.def_id).as_str());
     let ra: u128 = q["reserve_a"].as_str().unwrap_or("0").parse().unwrap_or(0);
     let rb: u128 = q["reserve_b"].as_str().unwrap_or("0").parse().unwrap_or(0);
     let (r_in, r_out) = if pay_is_a { (ra, rb) } else { (rb, ra) };
+    // MED: a slippage >= 100% (or negative) collapses min_out to 0 — silently
+    // disabling slippage protection. Reject it.
+    if !(0.0..100.0).contains(&slip_pct) {
+        return Err(format!("slippage percent must be in [0, 100), got {slip_pct}"));
+    }
     let eff_in = amount.saturating_mul(10_000u128.saturating_sub(fee)) / 10_000;
-    let q_out = (r_out * eff_in) / (r_in + eff_in);
-    let min_out = ((q_out as f64) * (1.0 - slip_pct / 100.0)).floor() as u128;
+    // LOW: saturating + zero-guarded so a large quote can't overflow/panic.
+    let denom = r_in.saturating_add(eff_in);
+    let q_out = if denom == 0 { 0 } else { r_out.saturating_mul(eff_in) / denom };
+    let min_out = ((q_out as f64) * (1.0 - slip_pct / 100.0)).floor().max(0.0) as u128;
     let deadline = u64::MAX;
     let amm = env.hex_id("LDEX_AMM_V2_PROGRAM_ID")?;
     let owner = env.acct_id("LDEX_USER_OWNER")?;
@@ -835,6 +851,7 @@ fn cmd_swap(env: &Env, pay: &str, get: &str, amount: u128,
             println!("private swap (mode-1 PrivateOwned — STARK ~10–15 min)...");
             unsafe {
                 ldex_amm_v2_private_swap_exact_in(env.cfg.as_ptr(), env.store.as_ptr(),
+                    amm.as_ptr(),
                     priv_a.as_ptr(), priv_b.as_ptr(),
                     def_a.as_ptr(), def_b.as_ptr(), def_in.as_ptr(),
                     amount, min_out, fee, deadline, tx.as_mut_ptr())
@@ -843,24 +860,32 @@ fn cmd_swap(env: &Env, pay: &str, get: &str, amount: u128,
         "disposable" | "disp" | "mode2" | "2" => {
             let lp = tp.letter.as_deref().ok_or("disposable swap needs token letters")?;
             let lg = tg.letter.as_deref().ok_or("disposable swap needs token letters")?;
-            // user_holding_a/b are the user's PRIV holdings (source of funds);
-            // a_holding_a/b are *fresh disposable A* holdings the FFI creates
-            // and destroys inside the privacy proof. The FFI handles those
-            // internally; we pass zero-bytes? Actually we still need to pass
-            // some account ids — per submit.rs they're the disposable A
-            // accounts the caller must have provided via env. For now, mode-2
-            // requires the same PRIV holdings as a_holding too.
+            // user_holding_a/b are the user's PRIV holdings (source of funds).
             let priv_a_letter = if pay_is_a { lp } else { lg };
             let priv_b_letter = if pay_is_a { lg } else { lp };
             let priv_a = env.acct_id(&format!("LDEX_PRIV_{priv_a_letter}"))?;
             let priv_b = env.acct_id(&format!("LDEX_PRIV_{priv_b_letter}"))?;
+            // a_holding_a/b are the FRESH single-use account-A holdings the
+            // disposable saga deshields into and re-shields from — typed to the
+            // pool-canonical def_a / def_b. The FFI does NOT create them: it
+            // reads them as real account ids. They must be freshly allocated per
+            // swap (e.g. via `w account new-public` + ATA init for def_a/def_b)
+            // and exported as LDEX_A_A / LDEX_A_B. Passing zero ids here (the old
+            // behaviour) would deshield the user's funds into the null account.
+            let a_a = env.acct_id("LDEX_A_A").map_err(|_| {
+                "disposable swap needs fresh account-A holdings: set LDEX_A_A (for def_a) and \
+                 LDEX_A_B (for def_b) to freshly-allocated, ATA-initialised public holdings".to_string()
+            })?;
+            let a_b = env.acct_id("LDEX_A_B").map_err(|_| {
+                "disposable swap needs fresh account-A holdings: set LDEX_A_A (for def_a) and \
+                 LDEX_A_B (for def_b) to freshly-allocated, ATA-initialised public holdings".to_string()
+            })?;
             println!("disposable swap (mode-2 fresh A — STARK ~15–25 min)...");
             unsafe {
                 ldex_amm_v2_disposable_swap(env.cfg.as_ptr(), env.store.as_ptr(),
+                    amm.as_ptr(),
                     priv_a.as_ptr(), priv_b.as_ptr(),
-                    // The FFI fills in fresh disposable A accounts; pass
-                    // null-byte placeholders. submit.rs handles creation.
-                    [0u8; 32].as_ptr(), [0u8; 32].as_ptr(),
+                    a_a.as_ptr(), a_b.as_ptr(),
                     def_a.as_ptr(), def_b.as_ptr(), def_in.as_ptr(),
                     amount, min_out, fee, deadline, tx.as_mut_ptr())
             }
@@ -885,12 +910,12 @@ fn cmd_pool_create(env: &Env, a: &str, b: &str, fee: u128,
     let lb = tb.letter.as_deref().ok_or("pool-create needs token letters")?;
     let hold_a = env.acct_id(&format!("LDEX_HOLD_{la}"))?;
     let hold_b = env.acct_id(&format!("LDEX_HOLD_{lb}"))?;
-    let _ = owner;  // currently unused (FFI auto-derives), kept for clarity
+    let amm = env.hex_id("LDEX_AMM_V2_PROGRAM_ID")?;
     let mut tx = [0u8; 32];
     let t0 = Instant::now();
     let rc = unsafe {
         ldex_amm_v2_new_pool_ata(env.cfg.as_ptr(), env.store.as_ptr(),
-            env.acct_id("LDEX_USER_OWNER")?.as_ptr(),
+            amm.as_ptr(), owner.as_ptr(),
             hold_a.as_ptr(), hold_b.as_ptr(),
             amount_a, amount_b, fee, u64::MAX, tx.as_mut_ptr())
     };
@@ -905,6 +930,7 @@ fn cmd_liq_add(env: &Env, a: &str, b: &str, amt_a: u128, amt_b: u128,
     let ta = resolve_token(env, a)?;
     let tb = resolve_token(env, b)?;
     let owner = env.acct_id("LDEX_USER_OWNER")?;
+    let amm = env.hex_id("LDEX_AMM_V2_PROGRAM_ID")?;
     // The pool exists in canonical (defA, defB) ordering. The user's
     // (amt_a, amt_b) is in the order they typed; if the user typed B/A
     // we swap so the FFI sees pool-canonical order.
@@ -914,7 +940,7 @@ fn cmd_liq_add(env: &Env, a: &str, b: &str, amt_a: u128, amt_b: u128,
         "public" | "pub" => {
             unsafe {
                 ldex_amm_v2_add_liquidity_ata(env.cfg.as_ptr(), env.store.as_ptr(),
-                    owner.as_ptr(),
+                    amm.as_ptr(), owner.as_ptr(),
                     ta.def_id.as_ptr(), tb.def_id.as_ptr(),
                     0 /* min_amount_liquidity */, amt_a, amt_b,
                     fee, u64::MAX, tx.as_mut_ptr())
@@ -930,6 +956,7 @@ fn cmd_liq_add(env: &Env, a: &str, b: &str, amt_a: u128, amt_b: u128,
             println!("private add-liq (STARK ~20+ min)...");
             unsafe {
                 ldex_amm_v2_private_add_liquidity(env.cfg.as_ptr(), env.store.as_ptr(),
+                    amm.as_ptr(),
                     priv_a.as_ptr(), priv_b.as_ptr(), priv_lp.as_ptr(),
                     ta.def_id.as_ptr(), tb.def_id.as_ptr(),
                     0 /* min_amount_liquidity */, amt_a, amt_b,
@@ -949,13 +976,14 @@ fn cmd_liq_remove(env: &Env, a: &str, b: &str, lp_amt: u128,
     let ta = resolve_token(env, a)?;
     let tb = resolve_token(env, b)?;
     let owner = env.acct_id("LDEX_USER_OWNER")?;
+    let amm = env.hex_id("LDEX_AMM_V2_PROGRAM_ID")?;
     let mut tx = [0u8; 32];
     let t0 = Instant::now();
     let rc = match mode {
         "public" | "pub" => {
             unsafe {
                 ldex_amm_v2_remove_liquidity_ata(env.cfg.as_ptr(), env.store.as_ptr(),
-                    owner.as_ptr(),
+                    amm.as_ptr(), owner.as_ptr(),
                     ta.def_id.as_ptr(), tb.def_id.as_ptr(),
                     lp_amt, min_a, min_b, fee, u64::MAX, tx.as_mut_ptr())
             }
@@ -970,6 +998,7 @@ fn cmd_liq_remove(env: &Env, a: &str, b: &str, lp_amt: u128,
             println!("private remove-liq (STARK ~25+ min)...");
             unsafe {
                 ldex_amm_v2_private_remove_liquidity(env.cfg.as_ptr(), env.store.as_ptr(),
+                    amm.as_ptr(),
                     priv_a.as_ptr(), priv_b.as_ptr(), priv_lp.as_ptr(),
                     ta.def_id.as_ptr(), tb.def_id.as_ptr(),
                     lp_amt, min_a, min_b, fee, u64::MAX, tx.as_mut_ptr())

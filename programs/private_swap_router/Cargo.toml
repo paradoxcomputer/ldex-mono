@@ -11,3 +11,8 @@ token_core = { path = "../token/core" }
 # Native LEZ ↔ WLEZ wrap/unwrap, batched into the privacy proof for
 # `PrivateSwapNativeIn` / `PrivateSwapNativeOut` (see batched-native-swap.md).
 wlez_core = { path = "../wlez/core" }
+
+[dev-dependencies]
+# Decode each chained call's `instruction_data` (encoded by `ChainedCall::new`
+# via `risc0_zkvm::serde::to_vec`) back into its typed instruction in tests.
+risc0-zkvm = { version = "=3.0.5", default-features = false }

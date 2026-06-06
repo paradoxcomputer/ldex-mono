@@ -16,15 +16,21 @@ use token_core::{TokenDefinition, TokenHolding};
 
 use crate::{
     add::add_liquidity,
-    new_definition::new_definition,
+    add_ata::add_liquidity_ata,
+    new_definition::{new_definition, new_definition_ata},
     remove::remove_liquidity,
     swap::{swap_exact_input, swap_exact_output},
+    swap_ata::{swap_exact_input_ata, swap_exact_output_ata},
     sync::sync_reserves,
 };
 
 const TOKEN_PROGRAM_ID: ProgramId = [15; 8];
 const AMM_PROGRAM_ID: ProgramId = [42; 8];
 const MALICIOUS_TOKEN_PROGRAM_ID: ProgramId = [99; 8];
+// A deployed ATA program id, distinct from the zero/default pin a
+// keypair-created (NewDefinition) pool carries. Used to drive the
+// fail-closed pin branch of the ATA-routed ops.
+const ATA_PROGRAM_ID: ProgramId = [77; 8];
 
 struct BalanceForTests;
 struct ChainedCallForTests;
@@ -3812,4 +3818,201 @@ fn make_token_holding(
         is_authorized: authorized,
         account_id: id,
     }
+}
+
+// --- ATA-routed ops: fail-closed pin coverage (RFP Func #8) -----------------
+//
+// A keypair-created pool (NewDefinition) pins `ata_program_id` to the default
+// (zero) value, which no deployed ATA program can match — so the ATA-routed
+// entrypoints must reject it rather than swap/add against a substitute (no-op)
+// ATA program that would skip the real input Transfer while still paying out.
+
+/// The pool produced by the real `new_definition` path carries a zero
+/// `ata_program_id` pin; routing a `swap_exact_input_ata` through it with a
+/// deployed ATA program id must hit the fail-closed pin branch and panic.
+/// This is the dead-path regression guard: a NewDefinition pool can never
+/// satisfy the pin.
+#[should_panic(expected = "ata_program_id does not match the program pinned at pool creation")]
+#[test]
+fn test_swap_exact_input_ata_rejects_zero_pinned_pool() {
+    // Build the pool exactly as a keypair-created pool would, via new_definition.
+    let (post_states, _chained_calls) = new_definition(
+        AccountWithMetadataForTests::pool_definition_uninit(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_uninit(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+        0i64,
+    );
+
+    let pool = AccountWithMetadata {
+        account: post_states[0].account().clone(),
+        is_authorized: true,
+        account_id: IdForTests::pool_definition_id(),
+    };
+
+    let _ = swap_exact_input_ata(
+        pool,
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::min_amount_out(),
+        IdForTests::token_a_definition_id(),
+        ATA_PROGRAM_ID,
+        0i64,
+    );
+}
+
+/// Same fail-closed pin branch for `swap_exact_output_ata` against a
+/// zero-pinned (keypair-created) pool.
+#[should_panic(expected = "ata_program_id does not match the program pinned at pool creation")]
+#[test]
+fn test_swap_exact_output_ata_rejects_zero_pinned_pool() {
+    let _ = swap_exact_output_ata(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::swap_amount_out_b(),
+        BalanceForTests::max_amount_in(),
+        IdForTests::token_a_definition_id(),
+        ATA_PROGRAM_ID,
+        0i64,
+    );
+}
+
+/// Same fail-closed pin branch for `add_liquidity_ata` against a zero-pinned
+/// (keypair-created) pool.
+#[should_panic(expected = "ata_program_id does not match the program pinned at pool creation")]
+#[test]
+fn test_add_liquidity_ata_rejects_zero_pinned_pool() {
+    let _ = add_liquidity_ata(
+        AccountWithMetadataForTests::pool_definition_init(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_init(),
+        NonZero::new(BalanceForTests::add_min_amount_lp()).unwrap(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::add_max_amount_b(),
+        ATA_PROGRAM_ID,
+        0i64,
+    );
+}
+
+// --- ATA-routed ops: matchable pin via new_definition_ata --------------------
+//
+// `new_definition_ata` pins the submitter-supplied ATA program into the pool,
+// which is what makes the ATA-routed entrypoints reachable-as-success. The
+// pool is otherwise byte-for-byte identical to a `new_definition` pool.
+
+/// `new_definition_ata` stores the supplied `ata_program_id` (so later ATA ops
+/// can match it) and is otherwise identical to the `new_definition` pool.
+#[test]
+fn test_new_definition_ata_pins_submitted_ata_program() {
+    let (post_states, chained_calls) = new_definition_ata(
+        AccountWithMetadataForTests::pool_definition_uninit(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_uninit(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+        ATA_PROGRAM_ID,
+        0i64,
+    );
+
+    let pool_def =
+        PoolDefinition::try_from(&post_states[0].account().data).unwrap();
+    // The submitter-supplied pin is stored (matchable), unlike new_definition.
+    assert_eq!(pool_def.ata_program_id, ATA_PROGRAM_ID);
+
+    // Everything else matches the keypair-only new_definition pool (same
+    // reserves / supply / ids / fee tier) — only the pin differs.
+    let pool_def_init = PoolDefinition::try_from(
+        &AccountWithMetadataForTests::pool_definition_init().account.data,
+    )
+    .unwrap();
+    assert_eq!(pool_def.definition_token_a_id, pool_def_init.definition_token_a_id);
+    assert_eq!(pool_def.definition_token_b_id, pool_def_init.definition_token_b_id);
+    assert_eq!(pool_def.vault_a_id, pool_def_init.vault_a_id);
+    assert_eq!(pool_def.vault_b_id, pool_def_init.vault_b_id);
+    assert_eq!(pool_def.liquidity_pool_id, pool_def_init.liquidity_pool_id);
+    assert_eq!(pool_def.liquidity_pool_supply, pool_def_init.liquidity_pool_supply);
+    assert_eq!(pool_def.reserve_a, pool_def_init.reserve_a);
+    assert_eq!(pool_def.reserve_b, pool_def_init.reserve_b);
+    assert_eq!(pool_def.fees, pool_def_init.fees);
+
+    // Chained calls (deposits + LP lock/mint) are identical to new_definition.
+    assert!(chained_calls[3] == ChainedCallForTests::cc_new_definition_token_a());
+    assert!(chained_calls[2] == ChainedCallForTests::cc_new_definition_token_b());
+    assert!(chained_calls[0] == ChainedCallForTests::cc_new_definition_token_lp_lock());
+    assert!(chained_calls[1] == ChainedCallForTests::cc_new_definition_token_lp_user());
+}
+
+/// End-to-end of the fix: a pool created via `new_definition_ata` makes the
+/// previously-dead `swap_exact_input_ata` path reachable — the pin assert now
+/// passes for the matching ATA program and the swap produces its chained calls
+/// instead of panicking.
+#[test]
+fn test_swap_exact_input_ata_succeeds_on_ata_pinned_pool() {
+    let (post_states, _chained_calls) = new_definition_ata(
+        AccountWithMetadataForTests::pool_definition_uninit(),
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::pool_lp_uninit(),
+        AccountWithMetadataForTests::lp_lock_holding_uninit(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        AccountWithMetadataForTests::user_holding_lp_uninit(),
+        NonZero::new(BalanceForTests::vault_a_reserve_init()).unwrap(),
+        NonZero::new(BalanceForTests::vault_b_reserve_init()).unwrap(),
+        BalanceForTests::fee_tier(),
+        AMM_PROGRAM_ID,
+        ATA_PROGRAM_ID,
+        0i64,
+    );
+
+    let pool = AccountWithMetadata {
+        account: post_states[0].account().clone(),
+        is_authorized: true,
+        account_id: IdForTests::pool_definition_id(),
+    };
+
+    let (_post, chained_calls) = swap_exact_input_ata(
+        pool,
+        AccountWithMetadataForTests::vault_a_init(),
+        AccountWithMetadataForTests::vault_b_init(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_a(),
+        AccountWithMetadataForTests::user_holding_b(),
+        BalanceForTests::add_max_amount_a(),
+        BalanceForTests::min_amount_out(),
+        IdForTests::token_a_definition_id(),
+        ATA_PROGRAM_ID,
+        0i64,
+    );
+    // Reaching here (no pin panic) proves the path is live; it emits the
+    // input ata::Transfer + output token::Transfer legs.
+    assert_eq!(chained_calls.len(), 2);
 }

@@ -10,3 +10,8 @@ amm_core = { path = "../amm/core" }
 ata_core = { path = "../ata/core" }
 token_core = { path = "../token/core" }
 wlez_core = { path = "../wlez/core" }
+
+[dev-dependencies]
+# Decode each chained call's `instruction_data` (encoded by `ChainedCall::new`
+# via `risc0_zkvm::serde::to_vec`) back into its typed instruction in tests.
+risc0-zkvm = { version = "=3.0.5", default-features = false }

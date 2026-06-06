@@ -40,6 +40,13 @@ pub fn add_liquidity_ata(
     assert_supported_fee_tier(pool_def_data.fees);
     assert_eq!(vault_a.account_id, pool_def_data.vault_a_id, "Vault A was not provided");
     assert_eq!(vault_b.account_id, pool_def_data.vault_b_id, "Vault B was not provided");
+    // SECURITY: the ATA program must match the one pinned at pool creation, else
+    // a no-op substitute would skip the real deposit `token::Transfer`s while the
+    // LP is still minted to the user (see swap_ata for the full rationale).
+    assert_eq!(
+        ata_program_id, pool_def_data.ata_program_id,
+        "ata_program_id does not match the program pinned at pool creation"
+    );
     assert_eq!(
         pool_def_data.liquidity_pool_id, pool_definition_lp.account_id,
         "LP definition mismatch"

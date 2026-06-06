@@ -55,7 +55,23 @@ pub fn swap_exact_input_ata(
     );
     assert_eq!(vault_a.account_id, pool_def_data.vault_a_id, "Vault A was not provided");
     assert_eq!(vault_b.account_id, pool_def_data.vault_b_id, "Vault B was not provided");
-    let _ = read_vault_fungible_balances("Validate ATA swap setup", &vault_a, &vault_b);
+    let (vault_a_balance, vault_b_balance) =
+        read_vault_fungible_balances("Validate ATA swap setup", &vault_a, &vault_b);
+    // MED: the vaults must actually hold at least the reserves the pool claims
+    // (mirrors swap::swap_exact_input). A vault drained below its recorded
+    // reserve would otherwise let the swap price against phantom liquidity.
+    assert!(vault_a_balance >= pool_def_data.reserve_a, "vault_a balance < reserve_a");
+    assert!(vault_b_balance >= pool_def_data.reserve_b, "vault_b balance < reserve_b");
+
+    // SECURITY: the ATA program is submitter-chosen, so it must equal the one
+    // pinned at pool creation. A substitute (e.g. no-op) program would skip the
+    // real input `token::Transfer` into the vault while the output leg below
+    // still pays out — draining the pool. (A default/zero pin means a
+    // keypair-created pool with no ATA support: such ops are rejected here.)
+    assert_eq!(
+        ata_program_id, pool_def_data.ata_program_id,
+        "ata_program_id does not match the program pinned at pool creation"
+    );
 
     // The ATA program id MUST come from the instruction (we cannot read
     // it from ata_*.account.program_owner — ATAs are token holdings owned
@@ -188,7 +204,7 @@ pub fn swap_exact_output_ata(
     exact_amount_out: u128,
     max_amount_in: u128,
     token_in_id: AccountId,
-    _ata_program_id: ProgramId,
+    ata_program_id: ProgramId,
     clock_ts: i64,
 ) -> (Vec<AccountPostState>, Vec<ChainedCall>) {
     let pool_def_data = PoolDefinition::try_from(&pool.account.data)
@@ -200,7 +216,20 @@ pub fn swap_exact_output_ata(
     );
     assert_eq!(vault_a.account_id, pool_def_data.vault_a_id, "Vault A was not provided");
     assert_eq!(vault_b.account_id, pool_def_data.vault_b_id, "Vault B was not provided");
-    let _ = read_vault_fungible_balances("Validate ATA swap setup", &vault_a, &vault_b);
+    let (vault_a_balance, vault_b_balance) =
+        read_vault_fungible_balances("Validate ATA swap setup", &vault_a, &vault_b);
+    // MED: the vaults must actually hold at least the reserves the pool claims
+    // (mirrors swap::swap_exact_input). A vault drained below its recorded
+    // reserve would otherwise let the swap price against phantom liquidity.
+    assert!(vault_a_balance >= pool_def_data.reserve_a, "vault_a balance < reserve_a");
+    assert!(vault_b_balance >= pool_def_data.reserve_b, "vault_b balance < reserve_b");
+
+    // SECURITY: see `swap_exact_input_ata` — the ATA program must match the one
+    // pinned at creation, else a no-op substitute drains the pool.
+    assert_eq!(
+        ata_program_id, pool_def_data.ata_program_id,
+        "ata_program_id does not match the program pinned at pool creation"
+    );
 
     let def_a = pool_def_data.definition_token_a_id;
     let def_b = pool_def_data.definition_token_b_id;
@@ -228,13 +257,11 @@ pub fn swap_exact_output_ata(
         .div_ceil(fee_mul);
     assert!(deposit_amount <= max_amount_in, "Required input exceeds maximum amount in");
 
-    let ata_program_id = ata_a.account.program_owner; // unused as dispatch — ATA addr is the recipient; we dispatch ata::Transfer via the explicit `ata_program_id` arg below.
-    let _ = ata_program_id;
     let mut owner_auth = owner.clone();
     owner_auth.is_authorized = true;
     let mut chained_calls = Vec::with_capacity(2);
     chained_calls.push(ChainedCall::new(
-        _ata_program_id,
+        ata_program_id,
         vec![owner_auth, ata_in.clone(), vault_in.clone()],
         &ata_core::Instruction::Transfer { amount: deposit_amount },
     ));

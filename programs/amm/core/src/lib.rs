@@ -39,6 +39,27 @@ pub enum Instruction {
         deadline: u64,
     },
 
+    /// Like `NewDefinition`, but pins the ATA program supplied by the
+    /// submitter into the pool's `ata_program_id`. This is what makes a pool
+    /// ATA-routable: the ATA-side ops (`SwapExact{Input,Output}Ata`,
+    /// `AddLiquidityAta`) assert the submitter's `ata_program_id` equals this
+    /// pinned value, so a `NewDefinition`-created pool (zero pin) rejects them
+    /// while a `NewDefinitionAta`-created pool accepts the matching program.
+    ///
+    /// The deposit / LP-lock / LP-mint legs are identical to `NewDefinition`
+    /// (the user side still uses keypair token holdings); only the pinned
+    /// `ata_program_id` differs. Same required accounts as `NewDefinition`.
+    NewDefinitionAta {
+        token_a_amount: u128,
+        token_b_amount: u128,
+        fees: u128,
+        /// ATA program id pinned into the pool so later ATA-routed ops can
+        /// assert against it (prevents a no-op-substitute drain).
+        ata_program_id: nssa_core::program::ProgramId,
+        /// Unix timestamp (milliseconds) after which this transaction is invalid.
+        deadline: u64,
+    },
+
     /// Adds liquidity to the Pool
     ///
     /// Required accounts:
@@ -252,6 +273,15 @@ pub struct PoolDefinition {
     pub vault_a_id: AccountId,
     pub vault_b_id: AccountId,
     pub liquidity_pool_id: AccountId,
+    /// ATA program pinned at pool creation (set by `NewDefinitionAta`). The
+    /// ATA-routed instructions (`SwapExact{Input,Output}Ata`, `AddLiquidityAta`)
+    /// assert the submitter's `ata_program_id` equals this, so the user leg
+    /// cannot be dispatched to a substitute (e.g. no-op) program that skips the
+    /// real `token::Transfer` deposit while the vault still pays out — draining
+    /// the pool. A default (all-zero) value means "no ATA program pinned": such
+    /// pools (`NewDefinition`-created) reject ATA ops, which is fail-closed and
+    /// safe.
+    pub ata_program_id: ProgramId,
     /// Total LP supply tracked by the pool. After initialization it includes the permanently
     /// locked `MINIMUM_LIQUIDITY`; a zero supply means the pool is uninitialized
     pub liquidity_pool_supply: u128,
@@ -308,12 +338,17 @@ impl PoolDefinition {
             return;
         }
         let dt = dt as u128;
-        // Hard domain guard (NOT debug_assert — that is compiled out of the
-        // release guest): a reserve >= 2^64 would overflow the `<< 64` below.
-        assert!(
-            self.reserve_a < (1u128 << 64) && self.reserve_b < (1u128 << 64),
-            "oracle reserve exceeds the 2^64 Q64.64 domain"
-        );
+        // A reserve >= 2^64 would overflow the `<< 64` below (the release guest
+        // has overflow-checks off, so it would silently wrap and corrupt the
+        // cumulative price). Do NOT panic here: oracle_update runs on every
+        // swap, so a panic would BRICK the pool — once reserves grow past the
+        // Q64.64 domain, every swap would revert permanently. Instead skip this
+        // oracle interval (advance the timestamp without accumulating). Trading
+        // continues; only the price observation for this one window is dropped.
+        if self.reserve_a >= (1u128 << 64) || self.reserve_b >= (1u128 << 64) {
+            self.block_ts_last = now_ms;
+            return;
+        }
         let price_a = (self.reserve_b << 64) / self.reserve_a; // price A in B, Q64.64
         let price_b = (self.reserve_a << 64) / self.reserve_b; // price B in A, Q64.64
         self.price_a_cum_last = self.price_a_cum_last.wrapping_add(price_a.wrapping_mul(dt));
@@ -352,12 +387,17 @@ pub fn amm_exact_input_out(
         .expect("swap_amount_in * (FEE_BPS_DENOMINATOR - fee_bps) overflows u128")
         / FEE_BPS_DENOMINATOR;
     assert!(effective_in != 0, "Effective swap amount should be nonzero");
-    reserve_out
+    let out = reserve_out
         .checked_mul(effective_in)
         .expect("reserve_out * effective_in overflows u128")
         / reserve_in
             .checked_add(effective_in)
-            .expect("reserve_in + effective_in overflows u128")
+            .expect("reserve_in + effective_in overflows u128");
+    // LOW: a zero output means the input was too small for the reserves; the
+    // swap would take funds and deliver nothing. Reject it here (single source
+    // of truth) rather than relying on each caller to re-check.
+    assert!(out != 0, "swap output is zero (input too small for the reserves)");
+    out
 }
 
 /// Apply a completed swap's token movements to the pool's reserve, volume,

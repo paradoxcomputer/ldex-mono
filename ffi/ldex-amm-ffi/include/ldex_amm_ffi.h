@@ -121,6 +121,21 @@ int32_t ldex_amm_new_pool(const char *config_path, const char *storage_path,
                           ldex_u128 amount_b, ldex_u128 fees,
                           uint64_t deadline, uint8_t *out_tx_hash);
 
+/* RFP Func #8 — create a v1 pool that PINS the deployed ATA program id
+ * (from LDEX_ATA_PROGRAM_ID), making the pool's ATA-routed ops
+ * (ldex_amm_swap_exact_in_ata / _out_ata / _add_liquidity_ata) reachable.
+ * A pool created with ldex_amm_new_pool pins zero and rejects those ops.
+ * Same keypair-holding accounts/args as ldex_amm_new_pool. */
+int32_t ldex_amm_new_pool_ata(const char *config_path,
+                              const char *storage_path,
+                              const uint8_t *amm_program_id,
+                              const uint8_t *user_holding_a,
+                              const uint8_t *user_holding_b,
+                              const uint8_t *user_holding_lp,
+                              ldex_u128 amount_a, ldex_u128 amount_b,
+                              ldex_u128 fees, uint64_t deadline,
+                              uint8_t *out_tx_hash);
+
 int32_t ldex_amm_swap_exact_in(const char *config_path,
                                const char *storage_path,
                                const uint8_t *amm_program_id,

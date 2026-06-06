@@ -87,6 +87,7 @@ dependencies = [
  "amm_v2_core",
  "ata_core",
  "nssa_core",
+ "risc0-zkvm",
  "token_core",
  "wlez_core",
 ]
@@ -2124,6 +2125,7 @@ dependencies = [
  "amm_core",
  "nssa_core",
  "private_swap_router_core",
+ "risc0-zkvm",
  "token_core",
  "wlez_core",
 ]

@@ -621,6 +621,9 @@ pub fn new_definition_ata(
         reserve_a: token_a_amount.into(),
         reserve_b: token_b_amount.into(),
         fees,
+        // Pin the ATA program at creation so every later ATA-routed op asserts
+        // against it (prevents the no-op-substitute drain).
+        ata_program_id,
         price_a_cum_last: 0,
         price_b_cum_last: 0,
         block_ts_last: 0,
@@ -783,6 +786,14 @@ pub fn remove_liquidity_ata(
     assert_eq!(vault_a.account_id, pool_def_data.vault_a_id, "Vault A id mismatch");
     assert_eq!(vault_b.account_id, pool_def_data.vault_b_id, "Vault B id mismatch");
     assert!(owner.is_authorized, "owner must sign remove_liquidity_ata");
+    // SECURITY: the ATA program must match the one pinned at pool creation. The
+    // ATA address checks below bind ata_in/out to this id, but binding alone is
+    // not enough — a substitute program the attacker controls could no-op the
+    // burn/return while the vault still pays out. Pinning closes that.
+    assert_eq!(
+        ata_program_id, pool_def_data.ata_program_id,
+        "ata_program_id does not match the program pinned at pool creation"
+    );
 
     // ATA address checks.
     let def_a = pool_def_data.definition_token_a_id;
@@ -819,7 +830,14 @@ pub fn remove_liquidity_ata(
         remove_amount <= user_lp_balance,
         "Remove amount exceeds user LP balance"
     );
-    let unlocked = pool_def_data.liquidity_pool_supply - MINIMUM_LIQUIDITY;
+    assert!(
+        pool_def_data.liquidity_pool_supply > MINIMUM_LIQUIDITY,
+        "Pool only contains locked liquidity"
+    );
+    let unlocked = pool_def_data
+        .liquidity_pool_supply
+        .checked_sub(MINIMUM_LIQUIDITY)
+        .expect("liquidity_pool_supply - MINIMUM_LIQUIDITY underflow");
     assert!(
         remove_amount <= unlocked,
         "Cannot remove locked minimum liquidity"
@@ -841,9 +859,18 @@ pub fn remove_liquidity_ata(
     assert!(withdraw_b >= min_amount_to_remove_token_b, "Slippage B");
 
     let pool_post_def = PoolDefinition {
-        liquidity_pool_supply: pool_def_data.liquidity_pool_supply - remove_amount,
-        reserve_a: pool_def_data.reserve_a - withdraw_a,
-        reserve_b: pool_def_data.reserve_b - withdraw_b,
+        liquidity_pool_supply: pool_def_data
+            .liquidity_pool_supply
+            .checked_sub(remove_amount)
+            .expect("liquidity_pool_supply - remove_amount underflow"),
+        reserve_a: pool_def_data
+            .reserve_a
+            .checked_sub(withdraw_a)
+            .expect("reserve_a - withdraw_a underflow"),
+        reserve_b: pool_def_data
+            .reserve_b
+            .checked_sub(withdraw_b)
+            .expect("reserve_b - withdraw_b underflow"),
         ..pool_def_data.clone()
     };
     let mut pool_post = pool.account.clone();
@@ -900,4 +927,812 @@ pub fn remove_liquidity_ata(
         AccountPostState::new(ata_lp.account),
     ];
     (post_states, chained_calls)
+}
+
+#[cfg(test)]
+mod tests {
+    //! Unit coverage for the amm_v2-specific combined-orchestration handlers,
+    //! which are otherwise untested (the canonical public swap path is covered
+    //! by `programs/integration_tests/tests/amm_disposable_drift_free.rs`).
+    //!
+    //! These handlers hand-build chained-call sequences whose correctness hinges
+    //! on exact pre-state reconciliation against the running state diff
+    //! (`shift_balance` signs), account ordering, vault PDA-seed claims, the
+    //! `lp_def → ata::Create → Mint` ordering in `new_definition_ata`, and the
+    //! `ata::Burn → token::Burn` supply decrement in `remove_liquidity_ata`. The
+    //! asserts below pin each of those so an off-by-one would fail here rather
+    //! than only surfacing as a sequencer-side rejection at runtime.
+
+    use super::*;
+
+    const AMM_V2_ID: ProgramId = [9; 8];
+    const TOKEN_ID: ProgramId = [7; 8];
+    const ATA_ID: ProgramId = [5; 8];
+    const WLEZ_ID: ProgramId = [3; 8];
+    const NATIVE_ID: ProgramId = [1; 8];
+
+    const FEE: u128 = amm_core::FEE_TIER_BPS_30;
+    const RESERVE_A0: u128 = 5_000;
+    const RESERVE_B0: u128 = 2_500;
+
+    fn id(b: u8) -> AccountId {
+        AccountId::new([b; 32])
+    }
+
+    fn fungible_account(definition_id: AccountId, balance: u128) -> Account {
+        Account {
+            program_owner: TOKEN_ID,
+            balance: 0,
+            data: Data::from(&TokenHolding::Fungible { definition_id, balance }),
+            nonce: nssa_core::account::Nonce(0),
+        }
+    }
+
+    /// `AccountWithMetadata` for a Fungible holding (token-program owned).
+    fn holding(account_id: AccountId, definition_id: AccountId, balance: u128) -> AccountWithMetadata {
+        AccountWithMetadata::new(fungible_account(definition_id, balance), false, account_id)
+    }
+
+    fn balance_of(awm: &AccountWithMetadata) -> u128 {
+        match TokenHolding::try_from(&awm.account.data).expect("fungible") {
+            TokenHolding::Fungible { balance, .. } => balance,
+            _ => panic!("not fungible"),
+        }
+    }
+
+    fn decode_token(call: &ChainedCall) -> TokenInstruction {
+        risc0_zkvm::serde::from_slice(&call.instruction_data)
+            .expect("token instruction decode")
+    }
+
+    fn decode_ata(call: &ChainedCall) -> ata_core::Instruction {
+        risc0_zkvm::serde::from_slice(&call.instruction_data)
+            .expect("ata instruction decode")
+    }
+
+    fn decode_wlez(call: &ChainedCall) -> WlezInstruction {
+        risc0_zkvm::serde::from_slice(&call.instruction_data)
+            .expect("wlez instruction decode")
+    }
+
+    fn def_a() -> AccountId {
+        id(3)
+    }
+    fn def_b() -> AccountId {
+        id(4)
+    }
+    fn pool_id() -> AccountId {
+        compute_pool_pda(AMM_V2_ID, def_a(), def_b(), FEE)
+    }
+    fn vault_a_id() -> AccountId {
+        compute_vault_pda(AMM_V2_ID, pool_id(), def_a())
+    }
+    fn vault_b_id() -> AccountId {
+        compute_vault_pda(AMM_V2_ID, pool_id(), def_b())
+    }
+    fn lp_def_id() -> AccountId {
+        compute_liquidity_token_pda(AMM_V2_ID, pool_id())
+    }
+    fn ata_of(owner: AccountId, def: AccountId) -> AccountId {
+        ata_core::get_associated_token_account_id(&ATA_ID, &ata_core::compute_ata_seed(owner, def))
+    }
+
+    /// A live, amm_v2-owned token↔token pool with the given reserves.
+    fn live_pool(reserve_a: u128, reserve_b: u128, supply: u128) -> AccountWithMetadata {
+        let def = PoolDefinition {
+            definition_token_a_id: def_a(),
+            definition_token_b_id: def_b(),
+            vault_a_id: vault_a_id(),
+            vault_b_id: vault_b_id(),
+            liquidity_pool_id: lp_def_id(),
+            liquidity_pool_supply: supply,
+            reserve_a,
+            reserve_b,
+            fees: FEE,
+            // Pinned at creation; `remove_liquidity_ata` asserts the caller's
+            // ata_program_id matches this. Irrelevant to the disposable swaps.
+            ata_program_id: ATA_ID,
+            ..Default::default()
+        };
+        let account = Account {
+            program_owner: AMM_V2_ID,
+            balance: 0,
+            data: Data::from(&def),
+            nonce: nssa_core::account::Nonce(0),
+        };
+        AccountWithMetadata::new(account, false, pool_id())
+    }
+
+    fn pool_supply(post: &AccountPostState) -> u128 {
+        PoolDefinition::try_from(&post.account().data)
+            .expect("pool def")
+            .liquidity_pool_supply
+    }
+
+    // ---- WLEZ-side fixtures (for the native-variant disposable swaps) -----
+    //
+    // The native handlers derive `wlez_program_id` from `wlez_vault`'s owner
+    // and `token_program_id` from `wlez_definition`'s owner — they never call
+    // the WLEZ PDA helpers, so synthetic ids suffice. The only binding the
+    // handler enforces is `wlez_definition.account_id == pool's WLEZ side`.
+
+    /// A plain native account (owned by the native-transfer program, not a
+    /// token holding) — models `user_native`.
+    fn native_account(account_id: AccountId, balance: u128) -> AccountWithMetadata {
+        let account = Account {
+            program_owner: NATIVE_ID,
+            balance,
+            data: Data::default(),
+            nonce: nssa_core::account::Nonce(0),
+        };
+        AccountWithMetadata::new(account, false, account_id)
+    }
+
+    /// The WLEZ vault PDA account (WLEZ-program owned — its owner is read as
+    /// `wlez_program_id`).
+    fn wlez_vault(account_id: AccountId) -> AccountWithMetadata {
+        let account = Account {
+            program_owner: WLEZ_ID,
+            balance: 0,
+            data: Data::default(),
+            nonce: nssa_core::account::Nonce(0),
+        };
+        AccountWithMetadata::new(account, false, account_id)
+    }
+
+    /// The WLEZ token-definition account (token-program owned — its owner is
+    /// read as `token_program_id` and its id is matched against the pool's
+    /// WLEZ side).
+    fn wlez_definition(account_id: AccountId) -> AccountWithMetadata {
+        let account = Account {
+            program_owner: TOKEN_ID,
+            balance: 0,
+            data: Data::from(&TokenDefinition::Fungible {
+                name: String::from("WLEZ"),
+                total_supply: 0,
+                metadata_id: None,
+            }),
+            nonce: nssa_core::account::Nonce(0),
+        };
+        AccountWithMetadata::new(account, false, account_id)
+    }
+
+    // ---- disposable_swap (token ↔ token) ---------------------------------
+
+    #[test]
+    fn disposable_swap_reconciles_chained_call_pre_states() {
+        let swap_in = 1_000u128;
+        let pool = live_pool(RESERVE_A0, RESERVE_B0, 100_000);
+        let user_in = holding(id(40), def_a(), swap_in);
+        // Account-A side holdings (intermediaries) and fresh receiver.
+        let a_holding_a = holding(id(41), def_a(), 0);
+        let a_holding_b = holding(id(42), def_b(), 0);
+        let vault_a = holding(vault_a_id(), def_a(), RESERVE_A0);
+        let vault_b = holding(vault_b_id(), def_b(), RESERVE_B0);
+        let user_out = holding(id(43), def_b(), 0);
+
+        let out_amount = amm_exact_input_out(RESERVE_A0, RESERVE_B0, FEE, swap_in);
+        assert!(out_amount > 0, "test fixture must produce nonzero output");
+
+        let (post_states, calls) = disposable_swap(
+            AMM_V2_ID,
+            user_in.clone(),
+            a_holding_a.clone(),
+            a_holding_b.clone(),
+            pool,
+            vault_a.clone(),
+            vault_b.clone(),
+            user_out.clone(),
+            swap_in,
+            out_amount, // min_amount_out == exact out: passes the slippage check
+            def_a(),    // token_in == token A
+            FEE,
+            u64::MAX,
+        );
+
+        // Four calls, in order: deshield, vault-in, vault-out, reshield.
+        assert_eq!(calls.len(), 4, "deshield/vault-in/vault-out/reshield");
+
+        // 1) Deshield: user_in -> a_in (token A side), full swap_in.
+        assert_eq!(calls[0].program_id, TOKEN_ID);
+        assert_eq!(calls[0].pre_states[0].account_id, user_in.account_id);
+        assert_eq!(calls[0].pre_states[1].account_id, a_holding_a.account_id);
+        assert!(calls[0].pda_seeds.is_empty(), "deshield is user-authorised");
+        assert!(
+            matches!(decode_token(&calls[0]), TokenInstruction::Transfer { amount_to_transfer } if amount_to_transfer == swap_in),
+        );
+
+        // 2) Vault deposit: a_in pre-state MUST reflect the running diff — it was
+        //    credited by `swap_in` in call 1 before being drained here.
+        assert_eq!(calls[1].pre_states[0].account_id, a_holding_a.account_id);
+        assert_eq!(
+            balance_of(&calls[1].pre_states[0]),
+            swap_in,
+            "a_in pre-state must include the deshield credit (shift_balance +)"
+        );
+        assert_eq!(calls[1].pre_states[1].account_id, vault_a.account_id);
+
+        // 3) Vault withdraw: vault_out (token B) -> a_out, PDA-authorised.
+        assert_eq!(calls[2].pre_states[0].account_id, vault_b.account_id);
+        assert!(calls[2].pre_states[0].is_authorized, "vault_out must be authorised");
+        assert_eq!(calls[2].pre_states[1].account_id, a_holding_b.account_id);
+        assert_eq!(
+            calls[2].pda_seeds,
+            vec![compute_vault_pda_seed(pool_id(), def_b())],
+            "vault_out withdraw must carry the vault_b PDA seed"
+        );
+        assert!(
+            matches!(decode_token(&calls[2]), TokenInstruction::Transfer { amount_to_transfer } if amount_to_transfer == out_amount),
+        );
+
+        // 4) Reshield: a_out pre-state reflects the running diff (credited by
+        //    `out_amount` in call 3) before paying the private receiver.
+        assert_eq!(calls[3].pre_states[0].account_id, a_holding_b.account_id);
+        assert_eq!(
+            balance_of(&calls[3].pre_states[0]),
+            out_amount,
+            "a_out pre-state must include the AMM-out credit (shift_balance +)"
+        );
+        assert_eq!(calls[3].pre_states[1].account_id, user_out.account_id);
+
+        // Pool post-state: reserve_in up by swap_in, reserve_out down by out_amount.
+        let pool_post = PoolDefinition::try_from(&post_states[3].account().data).expect("pool def");
+        assert_eq!(pool_post.reserve_a, RESERVE_A0 + swap_in);
+        assert_eq!(pool_post.reserve_b, RESERVE_B0 - out_amount);
+    }
+
+    #[test]
+    #[should_panic(expected = "slippage")]
+    fn disposable_swap_rejects_below_min_out() {
+        let swap_in = 1_000u128;
+        let pool = live_pool(RESERVE_A0, RESERVE_B0, 100_000);
+        let out_amount = amm_exact_input_out(RESERVE_A0, RESERVE_B0, FEE, swap_in);
+        let _ = disposable_swap(
+            AMM_V2_ID,
+            holding(id(40), def_a(), swap_in),
+            holding(id(41), def_a(), 0),
+            holding(id(42), def_b(), 0),
+            pool,
+            holding(vault_a_id(), def_a(), RESERVE_A0),
+            holding(vault_b_id(), def_b(), RESERVE_B0),
+            holding(id(43), def_b(), 0),
+            swap_in,
+            out_amount + 1, // demand more than achievable -> slippage panic
+            def_a(),
+            FEE,
+            u64::MAX,
+        );
+    }
+
+    /// Regression for the FFI vault/holding mis-ordering bug: a caller
+    /// who supplies the pair in the REVERSE of the pool's canonical leg
+    /// order (token B first) must align the (vault, a-holding) legs before
+    /// dispatch — otherwise `vault_a` resolves to vault(token_b) and the
+    /// handler panics on `vault_a.account_id == pool_def.vault_a_id`. This
+    /// mirrors exactly what `pool_needs_leg_flip` + the per-site swap now do
+    /// in `ldex-amm-ffi` (and `ldex_amm_v2_disposable_swap`). The pool's
+    /// stored token_a is `def_a()` (create-time order, NOT sorted), so a
+    /// caller passing `def_b()` as its "def_a" needs the flip.
+    #[test]
+    fn disposable_swap_aligns_reversed_caller_leg_order() {
+        let swap_in = 1_000u128;
+        let pool = live_pool(RESERVE_A0, RESERVE_B0, 100_000);
+        // Swap A -> B, but the caller enumerated the pool as (def_b, def_a).
+        let tok_in = def_a();
+        let caller_def_a = def_b(); // reversed: caller's "A" is the pool's B
+
+        // What `prep` would derive from the caller's reversed order
+        // (caller_def_a = def_b(), caller_def_b = def_a()):
+        //   vault_a = vault(caller_def_a) = vault_b_id (the pool's token B)
+        //   vault_b = vault(caller_def_b) = vault_a_id
+        // and the paired a-holdings in caller order.
+        let prep_vault_a = holding(vault_b_id(), def_b(), RESERVE_B0);
+        let prep_vault_b = holding(vault_a_id(), def_a(), RESERVE_A0);
+        let prep_a_a = holding(id(41), def_b(), 0); // a-holding for caller's def_a == def_b()
+        let prep_a_b = holding(id(42), def_a(), 0); // a-holding for caller's def_b == def_a()
+
+        // Apply the fix's rule: the pool's token_a is NOT caller_def_a, so flip.
+        let flip = pool_def_token_a(&pool) != caller_def_a;
+        assert!(flip, "fixture must exercise the reversed-order (flip) branch");
+        let (vault_a, vault_b, a_a, a_b) = if flip {
+            (prep_vault_b, prep_vault_a, prep_a_b, prep_a_a)
+        } else {
+            (prep_vault_a, prep_vault_b, prep_a_a, prep_a_b)
+        };
+
+        // user_in (private source, token A) and user_out (token B receiver).
+        let user_in = holding(id(40), def_a(), swap_in);
+        let user_out = holding(id(43), def_b(), 0);
+        let out_amount = amm_exact_input_out(RESERVE_A0, RESERVE_B0, FEE, swap_in);
+
+        // With the aligned legs the handler accepts the call (no vault-id
+        // panic) and produces the correct A->B swap.
+        let (post_states, calls) = disposable_swap(
+            AMM_V2_ID,
+            user_in,
+            a_a.clone(),
+            a_b.clone(),
+            pool,
+            vault_a.clone(),
+            vault_b.clone(),
+            user_out,
+            swap_in,
+            out_amount,
+            tok_in,
+            FEE,
+            u64::MAX,
+        );
+
+        assert_eq!(calls.len(), 4);
+        // Deposit leg drains the token-A a-holding (now slot a_a) into the
+        // token-A vault (now slot vault_a == vault_a_id).
+        assert_eq!(calls[1].pre_states[0].account_id, a_a.account_id);
+        assert_eq!(calls[1].pre_states[1].account_id, vault_a_id());
+        // Withdraw leg pays out of the token-B vault.
+        assert_eq!(calls[2].pre_states[0].account_id, vault_b_id());
+        assert!(calls[2].pre_states[0].is_authorized);
+        let pool_post =
+            PoolDefinition::try_from(&post_states[3].account().data).expect("pool def");
+        assert_eq!(pool_post.reserve_a, RESERVE_A0 + swap_in);
+        assert_eq!(pool_post.reserve_b, RESERVE_B0 - out_amount);
+    }
+
+    /// Mirror of `pool_needs_leg_flip`'s on-chain read, for the test above:
+    /// the pool's stored canonical token-A definition id.
+    fn pool_def_token_a(pool: &AccountWithMetadata) -> AccountId {
+        PoolDefinition::try_from(&pool.account.data)
+            .expect("pool def")
+            .definition_token_a_id
+    }
+
+    // ---- disposable_swap_native_in (LEZ -> token) ------------------------
+
+    #[test]
+    fn disposable_swap_native_in_reconciles_chained_call_pre_states() {
+        // WLEZ is token A of the pool; the output token is token B.
+        let swap_in = 1_000u128;
+        let pool = live_pool(RESERVE_A0, RESERVE_B0, 100_000);
+        let user_native = native_account(id(50), swap_in);
+        let wlez_vault = wlez_vault(id(51));
+        let wlez_definition = wlez_definition(def_a());
+        // Account-A-side WLEZ holding (intermediary) + output holding + receiver.
+        let a_wlez = holding(id(52), def_a(), 0);
+        let a_out = holding(id(53), def_b(), 0);
+        let vault_a = holding(vault_a_id(), def_a(), RESERVE_A0);
+        let vault_b = holding(vault_b_id(), def_b(), RESERVE_B0);
+        let user_out = holding(id(54), def_b(), 0);
+
+        let out_amount = amm_exact_input_out(RESERVE_A0, RESERVE_B0, FEE, swap_in);
+        assert!(out_amount > 0, "test fixture must produce nonzero output");
+
+        let (post_states, calls) = disposable_swap_native_in(
+            AMM_V2_ID,
+            user_native.clone(),
+            wlez_vault.clone(),
+            wlez_definition.clone(),
+            a_wlez.clone(),
+            a_out.clone(),
+            pool,
+            vault_a.clone(),
+            vault_b.clone(),
+            user_out.clone(),
+            swap_in,
+            out_amount, // min_amount_out == exact out: passes the slippage check
+            FEE,
+            u64::MAX,
+        );
+
+        // Four calls, in order: Wrap, vault-in, vault-out, reshield.
+        assert_eq!(calls.len(), 4, "Wrap/vault-in/vault-out/reshield");
+
+        // 1) WLEZ::Wrap — account order per wlez_core::Instruction::Wrap docs:
+        //    [user_native, vault, definition, user(=a_wlez) holding].
+        assert_eq!(calls[0].program_id, WLEZ_ID, "Wrap runs on the WLEZ program");
+        assert_eq!(calls[0].pre_states[0].account_id, user_native.account_id);
+        assert_eq!(calls[0].pre_states[1].account_id, wlez_vault.account_id);
+        assert_eq!(calls[0].pre_states[2].account_id, wlez_definition.account_id);
+        assert_eq!(calls[0].pre_states[3].account_id, a_wlez.account_id);
+        assert!(calls[0].pda_seeds.is_empty(), "Wrap carries no seed at this level");
+        assert!(
+            matches!(decode_wlez(&calls[0]), WlezInstruction::Wrap { amount } if amount == swap_in),
+        );
+
+        // 2) Vault deposit: a_wlez pre-state MUST reflect the running diff — it
+        //    was credited by `swap_in` by the Wrap mint before being drained.
+        assert_eq!(calls[1].program_id, TOKEN_ID);
+        assert_eq!(calls[1].pre_states[0].account_id, a_wlez.account_id);
+        assert_eq!(
+            balance_of(&calls[1].pre_states[0]),
+            swap_in,
+            "a_wlez pre-state must include the Wrap-mint credit (shift_balance +)"
+        );
+        assert_eq!(calls[1].pre_states[1].account_id, vault_a.account_id);
+        assert!(
+            matches!(decode_token(&calls[1]), TokenInstruction::Transfer { amount_to_transfer } if amount_to_transfer == swap_in),
+        );
+
+        // 3) Vault withdraw: vault_out (token B) -> a_out, PDA-authorised.
+        assert_eq!(calls[2].pre_states[0].account_id, vault_b.account_id);
+        assert!(calls[2].pre_states[0].is_authorized, "vault_out must be authorised");
+        assert_eq!(calls[2].pre_states[1].account_id, a_out.account_id);
+        assert_eq!(
+            calls[2].pda_seeds,
+            vec![compute_vault_pda_seed(pool_id(), def_b())],
+            "vault_out withdraw must carry the vault_b PDA seed"
+        );
+        assert!(
+            matches!(decode_token(&calls[2]), TokenInstruction::Transfer { amount_to_transfer } if amount_to_transfer == out_amount),
+        );
+
+        // 4) Reshield: a_out pre-state reflects the running diff (credited by
+        //    `out_amount` in call 3) before paying the private receiver.
+        assert_eq!(calls[3].pre_states[0].account_id, a_out.account_id);
+        assert_eq!(
+            balance_of(&calls[3].pre_states[0]),
+            out_amount,
+            "a_out pre-state must include the AMM-out credit (shift_balance +)"
+        );
+        assert_eq!(calls[3].pre_states[1].account_id, user_out.account_id);
+
+        // Pool post-state: WLEZ side (reserve_a) up by swap_in, out side down.
+        let pool_post = PoolDefinition::try_from(&post_states[5].account().data).expect("pool def");
+        assert_eq!(pool_post.reserve_a, RESERVE_A0 + swap_in);
+        assert_eq!(pool_post.reserve_b, RESERVE_B0 - out_amount);
+    }
+
+    #[test]
+    #[should_panic(expected = "slippage")]
+    fn disposable_swap_native_in_rejects_below_min_out() {
+        let swap_in = 1_000u128;
+        let pool = live_pool(RESERVE_A0, RESERVE_B0, 100_000);
+        let out_amount = amm_exact_input_out(RESERVE_A0, RESERVE_B0, FEE, swap_in);
+        let _ = disposable_swap_native_in(
+            AMM_V2_ID,
+            native_account(id(50), swap_in),
+            wlez_vault(id(51)),
+            wlez_definition(def_a()),
+            holding(id(52), def_a(), 0),
+            holding(id(53), def_b(), 0),
+            pool,
+            holding(vault_a_id(), def_a(), RESERVE_A0),
+            holding(vault_b_id(), def_b(), RESERVE_B0),
+            holding(id(54), def_b(), 0),
+            swap_in,
+            out_amount + 1, // demand more than achievable -> slippage panic
+            FEE,
+            u64::MAX,
+        );
+    }
+
+    // ---- disposable_swap_native_out (token -> LEZ) -----------------------
+
+    #[test]
+    fn disposable_swap_native_out_reconciles_chained_call_pre_states() {
+        // Input is token A (non-WLEZ); WLEZ is token B (the output side).
+        let swap_in = 1_000u128;
+        let pool = live_pool(RESERVE_A0, RESERVE_B0, 100_000);
+        let user_in = holding(id(60), def_a(), swap_in);
+        let a_in = holding(id(61), def_a(), 0);
+        // a_wlez receives the AMM-out (WLEZ side) before being unwrapped.
+        let a_wlez = holding(id(62), def_b(), 0);
+        let vault_a = holding(vault_a_id(), def_a(), RESERVE_A0);
+        let vault_b = holding(vault_b_id(), def_b(), RESERVE_B0);
+        let wlez_definition = wlez_definition(def_b());
+        let wlez_vault = wlez_vault(id(63));
+        let user_native = native_account(id(64), 0);
+
+        let out_amount = amm_exact_input_out(RESERVE_A0, RESERVE_B0, FEE, swap_in);
+        assert!(out_amount > 0, "test fixture must produce nonzero output");
+
+        let (post_states, calls) = disposable_swap_native_out(
+            AMM_V2_ID,
+            user_in.clone(),
+            a_in.clone(),
+            a_wlez.clone(),
+            pool,
+            vault_a.clone(),
+            vault_b.clone(),
+            wlez_definition.clone(),
+            wlez_vault.clone(),
+            user_native.clone(),
+            swap_in,
+            out_amount, // min_amount_out == exact out: passes the slippage check
+            def_a(),    // token_in == token A (non-WLEZ side)
+            FEE,
+            u64::MAX,
+        );
+
+        // Four calls, in order: deshield, vault-in, vault-out, Unwrap.
+        assert_eq!(calls.len(), 4, "deshield/vault-in/vault-out/Unwrap");
+
+        // 1) Deshield: user_in -> a_in (token A side), full swap_in.
+        assert_eq!(calls[0].program_id, TOKEN_ID);
+        assert_eq!(calls[0].pre_states[0].account_id, user_in.account_id);
+        assert_eq!(calls[0].pre_states[1].account_id, a_in.account_id);
+        assert!(calls[0].pda_seeds.is_empty(), "deshield is user-authorised");
+        assert!(
+            matches!(decode_token(&calls[0]), TokenInstruction::Transfer { amount_to_transfer } if amount_to_transfer == swap_in),
+        );
+
+        // 2) Vault deposit: a_in pre-state MUST reflect the running diff — it
+        //    was credited by `swap_in` in call 1 before being drained here.
+        assert_eq!(calls[1].pre_states[0].account_id, a_in.account_id);
+        assert_eq!(
+            balance_of(&calls[1].pre_states[0]),
+            swap_in,
+            "a_in pre-state must include the deshield credit (shift_balance +)"
+        );
+        assert_eq!(calls[1].pre_states[1].account_id, vault_a.account_id);
+
+        // 3) Vault withdraw: vault_out (token B, WLEZ side) -> a_wlez, PDA-auth.
+        assert_eq!(calls[2].pre_states[0].account_id, vault_b.account_id);
+        assert!(calls[2].pre_states[0].is_authorized, "vault_out must be authorised");
+        assert_eq!(calls[2].pre_states[1].account_id, a_wlez.account_id);
+        assert_eq!(
+            calls[2].pda_seeds,
+            vec![compute_vault_pda_seed(pool_id(), def_b())],
+            "vault_out withdraw must carry the vault_b PDA seed"
+        );
+        assert!(
+            matches!(decode_token(&calls[2]), TokenInstruction::Transfer { amount_to_transfer } if amount_to_transfer == out_amount),
+        );
+
+        // 4) WLEZ::Unwrap — account order per wlez_core::Instruction::Unwrap
+        //    docs: [user(=a_wlez) holding, definition, vault, user_native].
+        //    a_wlez pre-state reflects the running diff (credited by `out_amount`
+        //    in call 3) before the burn.
+        assert_eq!(calls[3].program_id, WLEZ_ID, "Unwrap runs on the WLEZ program");
+        assert_eq!(calls[3].pre_states[0].account_id, a_wlez.account_id);
+        assert_eq!(
+            balance_of(&calls[3].pre_states[0]),
+            out_amount,
+            "a_wlez pre-state must include the AMM-out credit (shift_balance +)"
+        );
+        assert_eq!(calls[3].pre_states[1].account_id, wlez_definition.account_id);
+        assert_eq!(calls[3].pre_states[2].account_id, wlez_vault.account_id);
+        assert_eq!(calls[3].pre_states[3].account_id, user_native.account_id);
+        assert!(
+            matches!(decode_wlez(&calls[3]), WlezInstruction::Unwrap { amount } if amount == out_amount),
+        );
+
+        // Pool post-state: input side (reserve_a) up by swap_in, WLEZ side down.
+        let pool_post = PoolDefinition::try_from(&post_states[3].account().data).expect("pool def");
+        assert_eq!(pool_post.reserve_a, RESERVE_A0 + swap_in);
+        assert_eq!(pool_post.reserve_b, RESERVE_B0 - out_amount);
+    }
+
+    #[test]
+    #[should_panic(expected = "slippage")]
+    fn disposable_swap_native_out_rejects_below_min_out() {
+        let swap_in = 1_000u128;
+        let pool = live_pool(RESERVE_A0, RESERVE_B0, 100_000);
+        let out_amount = amm_exact_input_out(RESERVE_A0, RESERVE_B0, FEE, swap_in);
+        let _ = disposable_swap_native_out(
+            AMM_V2_ID,
+            holding(id(60), def_a(), swap_in),
+            holding(id(61), def_a(), 0),
+            holding(id(62), def_b(), 0),
+            pool,
+            holding(vault_a_id(), def_a(), RESERVE_A0),
+            holding(vault_b_id(), def_b(), RESERVE_B0),
+            wlez_definition(def_b()),
+            wlez_vault(id(63)),
+            native_account(id(64), 0),
+            swap_in,
+            out_amount + 1, // demand more than achievable -> slippage panic
+            def_a(),
+            FEE,
+            u64::MAX,
+        );
+    }
+
+    // ---- new_definition_ata -> remove_liquidity_ata round-trip -----------
+
+    /// Build the account list `new_definition_ata` expects, run it, and return
+    /// `(post_states, calls, owner_id)`.
+    fn run_new_definition_ata(
+        token_a_amount: NonZeroU128,
+        token_b_amount: NonZeroU128,
+    ) -> (Vec<AccountPostState>, Vec<ChainedCall>, AccountId) {
+        let owner_id = id(20);
+        let pool = AccountWithMetadata::new(Account::default(), false, pool_id());
+        let vault_a = holding(vault_a_id(), def_a(), 0);
+        let vault_b = holding(vault_b_id(), def_b(), 0);
+        let pool_lp = AccountWithMetadata::new(
+            Account::default(),
+            false,
+            lp_def_id(),
+        );
+        let lp_lock = AccountWithMetadata::new(
+            Account::default(),
+            false,
+            compute_lp_lock_holding_pda(AMM_V2_ID, pool_id()),
+        );
+        let owner = AccountWithMetadata::new(Account::default(), false, owner_id);
+        // user_holding_a/b must sign (token::Transfer drains).
+        let mut user_a = holding(id(21), def_a(), token_a_amount.get());
+        user_a.is_authorized = true;
+        let mut user_b = holding(id(22), def_b(), token_b_amount.get());
+        user_b.is_authorized = true;
+        let ata_lp = AccountWithMetadata::new(
+            Account::default(),
+            false,
+            ata_of(owner_id, lp_def_id()),
+        );
+
+        let (post, calls) = new_definition_ata(
+            pool,
+            vault_a,
+            vault_b,
+            pool_lp,
+            lp_lock,
+            owner,
+            user_a,
+            user_b,
+            ata_lp,
+            token_a_amount,
+            token_b_amount,
+            FEE,
+            AMM_V2_ID,
+            ATA_ID,
+        );
+        (post, calls, owner_id)
+    }
+
+    #[test]
+    fn new_definition_then_remove_keeps_lp_supply_in_lockstep() {
+        let a_amt = NonZeroU128::new(RESERVE_A0).unwrap();
+        let b_amt = NonZeroU128::new(RESERVE_B0).unwrap();
+        let initial_lp = (RESERVE_A0 * RESERVE_B0).isqrt();
+        assert!(initial_lp > MINIMUM_LIQUIDITY, "fixture sanity");
+        let user_lp = initial_lp - MINIMUM_LIQUIDITY;
+
+        let (post, calls, owner_id) = run_new_definition_ata(a_amt, b_amt);
+
+        // Pool post-state records the full initial LP supply.
+        assert_eq!(pool_supply(&post[0]), initial_lp, "pool liquidity_pool_supply");
+        assert!(post[0].required_claim().is_some(), "pool claimed via PDA");
+
+        // Chained calls in the exact order the comments mandate:
+        //   [lp_def, ata::Create, Mint(user), token_b, token_a].
+        assert_eq!(calls.len(), 5);
+        // call 0: NewFungibleDefinition locks MINIMUM_LIQUIDITY into the LP def.
+        match decode_token(&calls[0]) {
+            TokenInstruction::NewFungibleDefinition { total_supply, .. } => {
+                assert_eq!(total_supply, MINIMUM_LIQUIDITY, "locked minimum liquidity");
+            }
+            _ => panic!("call 0 must be NewFungibleDefinition"),
+        }
+        // call 1: ata::Create(owner, lp_def, ata_lp) — BEFORE the Mint, so the
+        // ATA exists as a Fungible holding tied to lp_def when Mint runs.
+        assert_eq!(calls[1].program_id, ATA_ID);
+        assert!(matches!(decode_ata(&calls[1]), ata_core::Instruction::Create));
+        assert_eq!(calls[1].pre_states[0].account_id, owner_id);
+        assert_eq!(calls[1].pre_states[2].account_id, ata_of(owner_id, lp_def_id()));
+        // call 2: Mint user's share into the freshly-created ATA.
+        match decode_token(&calls[2]) {
+            TokenInstruction::Mint { amount_to_mint } => {
+                assert_eq!(amount_to_mint, user_lp, "user share == initial_lp - lock");
+            }
+            _ => panic!("call 2 must be Mint"),
+        }
+        assert_eq!(
+            calls[2].pda_seeds,
+            vec![compute_liquidity_token_pda_seed(pool_id())],
+            "Mint authorised by lp_def PDA seed"
+        );
+        // Lockstep invariant: locked supply + user-minted share == pool supply.
+        assert_eq!(MINIMUM_LIQUIDITY + user_lp, initial_lp);
+
+        // ---- Now remove the user's whole LP position back out. ----
+        let pool_after_new = AccountWithMetadata::new(post[0].account().clone(), false, pool_id());
+        let mut owner = AccountWithMetadata::new(Account::default(), false, owner_id);
+        owner.is_authorized = true;
+        let ata_a = holding(ata_of(owner_id, def_a()), def_a(), 0);
+        let ata_b = holding(ata_of(owner_id, def_b()), def_b(), 0);
+        // The user's LP ATA now holds `user_lp` (minted above).
+        let ata_lp = holding(ata_of(owner_id, lp_def_id()), lp_def_id(), user_lp);
+        let pool_lp = AccountWithMetadata::new(Account::default(), false, lp_def_id());
+        let vault_a = holding(vault_a_id(), def_a(), RESERVE_A0);
+        let vault_b = holding(vault_b_id(), def_b(), RESERVE_B0);
+
+        let remove = NonZeroU128::new(user_lp).unwrap();
+        let (rpost, rcalls) = remove_liquidity_ata(
+            pool_after_new,
+            vault_a,
+            vault_b,
+            pool_lp,
+            owner,
+            ata_a,
+            ata_b,
+            ata_lp,
+            remove,
+            1,
+            1,
+            ATA_ID,
+        );
+
+        // Pool supply drops by exactly the removed amount — in lockstep with the
+        // LP burned below (no drift between pool bookkeeping and LP token).
+        assert_eq!(
+            pool_supply(&rpost[0]),
+            initial_lp - user_lp,
+            "pool supply must drop by the removed LP amount"
+        );
+
+        // Calls: [ata::Burn, token::Transfer(vault_a), token::Transfer(vault_b)].
+        assert_eq!(rcalls.len(), 3);
+        match decode_ata(&rcalls[0]) {
+            ata_core::Instruction::Burn { amount } => {
+                assert_eq!(amount, user_lp, "ata::Burn decrements LP supply by removed amount");
+            }
+            _ => panic!("call 0 must be ata::Burn"),
+        }
+        // Burn account order: [owner(auth), ata_lp, lp_def].
+        assert!(rcalls[0].pre_states[0].is_authorized, "owner authorises burn");
+        assert_eq!(rcalls[0].pre_states[1].account_id, ata_of(owner_id, lp_def_id()));
+        assert_eq!(rcalls[0].pre_states[2].account_id, lp_def_id());
+
+        // Proportional withdrawal returns the full reserves for a full burn of
+        // the unlocked supply share; assert it lands in the user's ATAs.
+        let expected_a = RESERVE_A0 * user_lp / initial_lp;
+        let expected_b = RESERVE_B0 * user_lp / initial_lp;
+        assert_eq!(rcalls[1].pre_states[1].account_id, ata_of(owner_id, def_a()));
+        assert!(
+            matches!(decode_token(&rcalls[1]), TokenInstruction::Transfer { amount_to_transfer } if amount_to_transfer == expected_a),
+        );
+        assert_eq!(rcalls[2].pre_states[1].account_id, ata_of(owner_id, def_b()));
+        assert!(
+            matches!(decode_token(&rcalls[2]), TokenInstruction::Transfer { amount_to_transfer } if amount_to_transfer == expected_b),
+        );
+        assert_eq!(rcalls[1].pda_seeds, vec![compute_vault_pda_seed(pool_id(), def_a())]);
+        assert_eq!(rcalls[2].pda_seeds, vec![compute_vault_pda_seed(pool_id(), def_b())]);
+
+        // Pool reserves drop by the amounts returned.
+        let pool_post = PoolDefinition::try_from(&rpost[0].account().data).expect("pool def");
+        assert_eq!(pool_post.reserve_a, RESERVE_A0 - expected_a);
+        assert_eq!(pool_post.reserve_b, RESERVE_B0 - expected_b);
+    }
+
+    #[test]
+    #[should_panic(expected = "Initial liquidity must exceed minimum liquidity lock")]
+    fn new_definition_ata_rejects_below_minimum_liquidity() {
+        // isqrt(amounts) <= MINIMUM_LIQUIDITY must be rejected.
+        let small = NonZeroU128::new(10).unwrap();
+        let _ = run_new_definition_ata(small, small);
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot remove locked minimum liquidity")]
+    fn remove_liquidity_ata_rejects_removing_locked_minimum() {
+        let owner_id = id(20);
+        let supply = 5_000u128;
+        let pool = live_pool(RESERVE_A0, RESERVE_B0, supply);
+        let mut owner = AccountWithMetadata::new(Account::default(), false, owner_id);
+        owner.is_authorized = true;
+        let ata_a = holding(ata_of(owner_id, def_a()), def_a(), 0);
+        let ata_b = holding(ata_of(owner_id, def_b()), def_b(), 0);
+        // User holds the entire supply, but `unlocked = supply - MINIMUM_LIQUIDITY`
+        // is the cap; removing the full supply must be rejected.
+        let ata_lp = holding(ata_of(owner_id, lp_def_id()), lp_def_id(), supply);
+        let pool_lp = AccountWithMetadata::new(Account::default(), false, lp_def_id());
+        let vault_a = holding(vault_a_id(), def_a(), RESERVE_A0);
+        let vault_b = holding(vault_b_id(), def_b(), RESERVE_B0);
+
+        let remove = NonZeroU128::new(supply).unwrap();
+        let _ = remove_liquidity_ata(
+            pool,
+            vault_a,
+            vault_b,
+            pool_lp,
+            owner,
+            ata_a,
+            ata_b,
+            ata_lp,
+            remove,
+            1,
+            1,
+            ATA_ID,
+        );
+    }
 }

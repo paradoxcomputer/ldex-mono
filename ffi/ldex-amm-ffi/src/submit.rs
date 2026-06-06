@@ -152,6 +152,34 @@ async fn prep_private(
     })
 }
 
+/// Returns `true` when the caller passed the token pair in the REVERSE
+/// of the pool's canonical leg order — i.e. the pool's stored
+/// `definition_token_a_id` is `def_b_passed`, not `def_a_passed`.
+///
+/// The pool PDA is order-INDEPENDENT (`compute_pool_pda_seed` sorts the
+/// two ids), so a pool can be looked up with the defs in either order.
+/// The vault PDAs and the amm/amm_v2 handlers, however, bind *position*
+/// A to the pool's stored `definition_token_a_id`: every handler asserts
+/// `vault_a.account_id == pool_def.vault_a_id` and pairs `vault_a` with
+/// `user_holding_a` (and, for liquidity, with `*_token_a`). So whenever
+/// this returns `true` the caller must flip its
+/// `(vault_a, holding_a, amount_a)` / `(vault_b, holding_b, amount_b)`
+/// tuples before building the account list, or the guest panics on the
+/// vault-id assertion. Reads the pool's `PoolDefinition` from chain.
+async fn pool_needs_leg_flip(
+    wallet: &WalletCore,
+    pool: AccountId,
+    def_a_passed: AccountId,
+) -> Result<bool, i32> {
+    let acc = wallet
+        .get_account_public(pool)
+        .await
+        .map_err(|_| LDEX_AMM_ERR_ACCOUNT)?;
+    let pool_def = PoolDefinition::try_from(&acc.data)
+        .map_err(|_| LDEX_AMM_ERR_ACCOUNT)?;
+    Ok(pool_def.definition_token_a_id != def_a_passed)
+}
+
 /// Align `prep_private`'s `vault_a`/`vault_b` with the pool's actual
 /// `definition_token_a_id` ordering, fetching the pool from chain.
 ///
@@ -164,26 +192,22 @@ async fn prep_private(
 /// vault_a/b. amm_v2 then asserts `vault_a.account_id ==
 /// pool_def.vault_a_id` and panics inside the proof guest.
 ///
-/// This helper reads the pool's PoolDefinition, checks which def is
-/// actually `definition_token_a_id`, and swaps the prepped `vault_a`/
-/// `vault_b` if needed. Safe no-op when the ordering already matches.
-async fn align_prep_to_pool(
-    p: &mut PrepP,
-    amm_pid: nssa_core::program::ProgramId,
-    def_a_passed: AccountId,
-) -> Result<(), i32> {
-    let acc = p
-        .wallet
-        .get_account_public(p.pool)
-        .await
-        .map_err(|_| LDEX_AMM_ERR_ACCOUNT)?;
-    let pool_def = PoolDefinition::try_from(&acc.data)
-        .map_err(|_| LDEX_AMM_ERR_ACCOUNT)?;
-    if pool_def.definition_token_a_id != def_a_passed {
-        // Pool's def_a is the OTHER one — re-derive both vaults from
-        // the pool's canonical ordering and swap into the PrepP.
-        p.vault_a = compute_vault_pda(amm_pid, p.pool, pool_def.definition_token_a_id);
-        p.vault_b = compute_vault_pda(amm_pid, p.pool, pool_def.definition_token_b_id);
+/// This helper swaps the prepped `vault_a`/`vault_b` if the pool's
+/// canonical leg order is reversed relative to `def_a_passed`. Safe
+/// no-op when the ordering already matches. NOTE: this only re-orders
+/// the vaults — paths that also pass user holdings / per-side amounts
+/// positionally (token↔token swap & liquidity) must flip those too; see
+/// `pool_needs_leg_flip`. It is correct on its own only for the WLEZ
+/// disposable paths, whose handlers pick the in/out vault by definition
+/// and carry the user holdings as definition-tagged (not position-tagged)
+/// accounts.
+async fn align_prep_to_pool(p: &mut PrepP, def_a_passed: AccountId) -> Result<(), i32> {
+    if pool_needs_leg_flip(&p.wallet, p.pool, def_a_passed).await? {
+        // Pool's def_a is the OTHER one. `vault_a` was derived from
+        // `def_a_passed` and `vault_b` from `def_b_passed`, so swapping
+        // them is exactly `vault_a = vault(pool.token_a)`,
+        // `vault_b = vault(pool.token_b)`.
+        std::mem::swap(&mut p.vault_a, &mut p.vault_b);
     }
     Ok(())
 }
@@ -327,9 +351,12 @@ pub unsafe extern "C" fn ldex_amm_pool_info(
                     "{{\"exists\":true,\"reserve_a\":\"{}\",\"reserve_b\":\"{}\",\
                      \"lp_supply\":\"{}\",\"fees\":{},\
                      \"cum_volume_a\":\"{}\",\"cum_volume_b\":\"{}\",\
-                     \"cum_fees_a\":\"{}\",\"cum_fees_b\":\"{}\"}}",
+                     \"cum_fees_a\":\"{}\",\"cum_fees_b\":\"{}\",\
+                     \"token_a_def\":\"{}\",\"token_b_def\":\"{}\"}}",
                     p.reserve_a, p.reserve_b, p.liquidity_pool_supply, p.fees,
-                    p.cum_volume_a, p.cum_volume_b, p.cum_fees_a, p.cum_fees_b
+                    p.cum_volume_a, p.cum_volume_b, p.cum_fees_a, p.cum_fees_b,
+                    hex32s(p.definition_token_a_id.value()),
+                    hex32s(p.definition_token_b_id.value())
                 )),
                 _ => Ok("{\"exists\":false}".to_string()),
             },
@@ -685,6 +712,84 @@ pub unsafe extern "C" fn ldex_amm_new_pool(
     out32(res, out_tx_hash)
 }
 
+/// `NewDefinitionAta` — create a v1 fee-tier pool that PINS the deployed
+/// ATA program id, making the pool's ATA-routed ops
+/// (`ldex_amm_swap_exact_in_ata` / `_out_ata` / `_add_liquidity_ata`)
+/// reachable. Without this, a pool created via `ldex_amm_new_pool` pins
+/// `ProgramId::default()` (zero) and every v1 ATA op fails the
+/// `ata_program_id == pinned id` assertion. Mirrors `ldex_amm_new_pool`
+/// exactly (same keypair-holding deposit/LP-lock/LP-mint legs and account
+/// order) plus the pinned `ata_program_id`, derived — like the other F8
+/// ATA FFIs — from the `LDEX_ATA_PROGRAM_ID` env var. The amm_v2 analogue
+/// is `ldex_amm_v2_new_pool_ata`.
+///
+/// # Safety
+/// As `ldex_amm_new_pool`.
+#[no_mangle]
+pub unsafe extern "C" fn ldex_amm_new_pool_ata(
+    config_path: *const c_char,
+    storage_path: *const c_char,
+    amm_program_id: *const u8,
+    user_holding_a: *const u8,
+    user_holding_b: *const u8,
+    user_holding_lp: *const u8,
+    amount_a: u128,
+    amount_b: u128,
+    fees: u128,
+    deadline: u64,
+    out_tx_hash: *mut u8,
+) -> i32 {
+    let (Some(cfg), Some(store)) = (c_str(config_path), c_str(storage_path)) else {
+        return LDEX_AMM_ERR_UTF8;
+    };
+    let (pid_b, a_b, b_b, lp_b, _) = ids4!(
+        amm_program_id,
+        user_holding_a,
+        user_holding_b,
+        user_holding_lp,
+        user_holding_lp
+    );
+    if out_tx_hash.is_null() {
+        return LDEX_AMM_ERR_NULL;
+    }
+    let amm_pid = program_id_from_bytes(pid_b);
+    let (uha, uhb, uhlp) = (AccountId::new(a_b), AccountId::new(b_b), AccountId::new(lp_b));
+    let rt = match runtime() {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
+    let res = rt.block_on(async move {
+        // Only the pinned ATA program id is needed (the user side still
+        // uses keypair holdings, exactly like NewDefinition); the derived
+        // ATAs are unused. Same env-var source as `ata_env_ctx` callers.
+        let (ata_pid, _, _) = ata_env_ctx(uha, uha, uha)?;
+        let p = prep(&cfg, &store, amm_pid, uha, uhb, fees).await?;
+        let lp_def = compute_liquidity_token_pda(amm_pid, p.pool);
+        let lp_lock = compute_lp_lock_holding_pda(amm_pid, p.pool);
+        let account_ids = vec![
+            p.pool, p.vault_a, p.vault_b, lp_def, lp_lock, uha, uhb, uhlp, CLOCK_01,
+        ];
+        let mut signers = vec![uha, uhb];
+        if p.wallet
+            .storage()
+            .user_data
+            .get_pub_account_signing_key(uhlp)
+            .is_some()
+        {
+            signers.push(uhlp);
+        }
+        let instruction = Instruction::NewDefinitionAta {
+            token_a_amount: amount_a,
+            token_b_amount: amount_b,
+            fees,
+            ata_program_id: ata_pid,
+            deadline,
+        };
+        finalize(&p.wallet, amm_pid, account_ids, &signers, instruction).await
+    });
+    out32(res, out_tx_hash)
+}
+
 /// `SwapExactInput`. Accounts: pool, vault_a, vault_b, user_a, user_b.
 /// Signer: the user holding whose token definition == `token_definition_in`.
 ///
@@ -811,9 +916,19 @@ pub unsafe extern "C" fn ldex_amm_swap_exact_in_ata(
             &ata_pid, &ata_core::compute_ata_seed(owner_id, def_b));
 
         let p = prep(&cfg, &store, amm_pid, ata_a_id, ata_b_id, fees).await?;
-        let _ = (def_a, def_b);
+        let _ = def_b;
+        // Align the (vault, ata) legs to the pool's canonical token-A: the
+        // handler asserts vault_a == pool.vault_a_id and pairs vault_a with
+        // ata_a, so if the caller passed the pair reversed, flip both
+        // together (token_definition_id_in disambiguates the direction).
+        let (vault_a, vault_b, ata_a_id, ata_b_id) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, def_a).await? {
+                (p.vault_b, p.vault_a, ata_b_id, ata_a_id)
+            } else {
+                (p.vault_a, p.vault_b, ata_a_id, ata_b_id)
+            };
         let account_ids = vec![
-            p.pool, p.vault_a, p.vault_b, owner_id, ata_a_id, ata_b_id, CLOCK_01,
+            p.pool, vault_a, vault_b, owner_id, ata_a_id, ata_b_id, CLOCK_01,
         ];
         let instruction = Instruction::SwapExactInputAta {
             swap_amount_in,
@@ -890,7 +1005,15 @@ pub unsafe extern "C" fn ldex_amm_swap_exact_out_ata(
     let res = rt.block_on(async move {
         let (ata_pid, ata_a_id, ata_b_id) = ata_env_ctx(owner_id, def_a, def_b)?;
         let p = prep(&cfg, &store, amm_pid, ata_a_id, ata_b_id, fees).await?;
-        let account_ids = vec![p.pool, p.vault_a, p.vault_b, owner_id, ata_a_id, ata_b_id, CLOCK_01];
+        // Align (vault, ata) legs to the pool's canonical token-A; see
+        // ldex_amm_swap_exact_in_ata.
+        let (vault_a, vault_b, ata_a_id, ata_b_id) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, def_a).await? {
+                (p.vault_b, p.vault_a, ata_b_id, ata_a_id)
+            } else {
+                (p.vault_a, p.vault_b, ata_a_id, ata_b_id)
+            };
+        let account_ids = vec![p.pool, vault_a, vault_b, owner_id, ata_a_id, ata_b_id, CLOCK_01];
         let instruction = Instruction::SwapExactOutputAta {
             exact_amount_out, max_amount_in,
             token_definition_id_in: tok_in,
@@ -941,13 +1064,25 @@ pub unsafe extern "C" fn ldex_amm_add_liquidity_ata(
         // ATA_LP derivation: same scheme but with lp_def as the "definition".
         let ata_lp_id = ata_core::get_associated_token_account_id(
             &ata_pid, &ata_core::compute_ata_seed(owner_id, lp_def));
+        // Align (vault, ata, max-amount) legs to the pool's canonical
+        // token-A: add_liquidity_ata keys vault_a/ata_a/max_a all to
+        // reserve_a, so a reversed-order call must flip all three (ata_lp
+        // is the LP leg, unaffected).
+        let (vault_a, vault_b, ata_a_id, ata_b_id, max_a, max_b) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, def_a).await? {
+                (p.vault_b, p.vault_a, ata_b_id, ata_a_id,
+                 max_amount_to_add_token_b, max_amount_to_add_token_a)
+            } else {
+                (p.vault_a, p.vault_b, ata_a_id, ata_b_id,
+                 max_amount_to_add_token_a, max_amount_to_add_token_b)
+            };
         let account_ids = vec![
-            p.pool, p.vault_a, p.vault_b, lp_def, owner_id,
+            p.pool, vault_a, vault_b, lp_def, owner_id,
             ata_a_id, ata_b_id, ata_lp_id, CLOCK_01,
         ];
         let instruction = Instruction::AddLiquidityAta {
-            min_amount_liquidity, max_amount_to_add_token_a,
-            max_amount_to_add_token_b, ata_program_id: ata_pid, deadline,
+            min_amount_liquidity, max_amount_to_add_token_a: max_a,
+            max_amount_to_add_token_b: max_b, ata_program_id: ata_pid, deadline,
         };
         finalize(&p.wallet, amm_pid, account_ids, &[owner_id], instruction).await
     });
@@ -998,14 +1133,26 @@ pub unsafe extern "C" fn ldex_amm_remove_liquidity_ata(
         let lp_def = compute_liquidity_token_pda(amm_pid, p.pool);
         let ata_lp_id = ata_core::get_associated_token_account_id(
             &ata_pid, &ata_core::compute_ata_seed(owner_id, lp_def));
+        // Align (vault, ata, min-amount) legs to the pool's canonical
+        // token-A: remove keys vault_a/user_holding_a(ata_a)/min_a all to
+        // reserve_a, so a reversed-order call must flip all three (ata_lp
+        // is the LP leg, unaffected).
+        let (vault_a, vault_b, ata_a_id, ata_b_id, min_a, min_b) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, def_a).await? {
+                (p.vault_b, p.vault_a, ata_b_id, ata_a_id,
+                 min_amount_to_remove_token_b, min_amount_to_remove_token_a)
+            } else {
+                (p.vault_a, p.vault_b, ata_a_id, ata_b_id,
+                 min_amount_to_remove_token_a, min_amount_to_remove_token_b)
+            };
         let account_ids = vec![
-            p.pool, p.vault_a, p.vault_b, lp_def,
+            p.pool, vault_a, vault_b, lp_def,
             ata_a_id, ata_b_id, ata_lp_id, CLOCK_01,
         ];
         let instruction = Instruction::RemoveLiquidity {
             remove_liquidity_amount,
-            min_amount_to_remove_token_a,
-            min_amount_to_remove_token_b,
+            min_amount_to_remove_token_a: min_a,
+            min_amount_to_remove_token_b: min_b,
             deadline,
         };
         // Owner signs (provides nonce); the AMM's RemoveLiquidity path
@@ -1303,11 +1450,22 @@ pub unsafe extern "C" fn ldex_amm_private_swap_exact_in(
     };
     let res: Result<[u8; 32], i32> = rt.block_on(async move {
         let p = prep_private(&cfg, &store, amm_pid, def_a, def_b, fees).await?;
-        // pre_states order = accounts order below; input holding is uha
-        // (idx 3) when the input token is def_a, else uhb (idx 4).
-        let input_idx = if def_a == tok_in {
+        // Align (vault, holding) legs to the pool's canonical token-A:
+        // swap_exact_input_circuit asserts vault_a == pool.vault_a_id and
+        // pairs vault_a (idx1) with user_holding_a (idx3), so if the caller
+        // passed the pair reversed, flip both vaults and holdings together
+        // (token_definition_id_in disambiguates the direction).
+        let flip = pool_needs_leg_flip(&p.wallet, p.pool, def_a).await?;
+        let (vault_a, vault_b, h_a, h_b, slot_a_def, slot_b_def) = if flip {
+            (p.vault_b, p.vault_a, uhb, uha, def_b, def_a)
+        } else {
+            (p.vault_a, p.vault_b, uha, uhb, def_a, def_b)
+        };
+        // pre_states order = accounts order below; input holding is h_a
+        // (idx 3) when the input token is the slot-A def, else h_b (idx 4).
+        let input_idx = if slot_a_def == tok_in {
             3usize
-        } else if def_b == tok_in {
+        } else if slot_b_def == tok_in {
             4usize
         } else {
             return Err(LDEX_AMM_ERR_ACCOUNT);
@@ -1315,10 +1473,10 @@ pub unsafe extern "C" fn ldex_amm_private_swap_exact_in(
 
         let accounts = vec![
             PrivacyPreservingAccount::Public(p.pool),
-            PrivacyPreservingAccount::Public(p.vault_a),
-            PrivacyPreservingAccount::Public(p.vault_b),
-            PrivacyPreservingAccount::PrivateOwned(uha),
-            PrivacyPreservingAccount::PrivateOwned(uhb),
+            PrivacyPreservingAccount::Public(vault_a),
+            PrivacyPreservingAccount::Public(vault_b),
+            PrivacyPreservingAccount::PrivateOwned(h_a),
+            PrivacyPreservingAccount::PrivateOwned(h_b),
             // No clock — `SwapExactInputCircuit` skips the TWAP oracle
             // update, so the proof's pre-state set has no CLOCK_01
             // entry to drift during slow CPU proving. See
@@ -1484,16 +1642,20 @@ pub unsafe extern "C" fn ldex_amm_disposable_swap_exact_in(
         Err(e) => return e,
     };
     let res: Result<[u8; 32], i32> = rt.block_on(async move {
-        eprintln!("[disp] step:prep_private");
+        // LOW: debug-only tracing. These lines print account ids and the
+        // shielded input balance, which must NOT leak to stderr in a release
+        // build of a privacy tool. Compiled out unless debug_assertions.
+        macro_rules! disp_trace { ($($a:tt)*) => {{ #[cfg(debug_assertions)] eprintln!($($a)*); }} }
+        disp_trace!("[disp] step:prep_private");
         let p = prep_private(&cfg, &store, amm_pid, def_a, def_b, fees).await?;
-        eprintln!("[disp] pool={:?} vault_a={:?} vault_b={:?}", p.pool, p.vault_a, p.vault_b);
+        disp_trace!("[disp] pool={:?} vault_a={:?} vault_b={:?}", p.pool, p.vault_a, p.vault_b);
         // Orient user in/out holdings by the input token.
         let (user_in, user_out) = if def_a == tok_in {
             (uha, uhb)
         } else if def_b == tok_in {
             (uhb, uha)
         } else {
-            eprintln!("[disp] FAIL: tok_in matches neither def_a nor def_b");
+            disp_trace!("[disp] FAIL: tok_in matches neither def_a nor def_b");
             return Err(LDEX_AMM_ERR_ACCOUNT);
         };
 
@@ -1519,9 +1681,9 @@ pub unsafe extern "C" fn ldex_amm_disposable_swap_exact_in(
             fees,
             deadline,
         };
-        eprintln!("[disp] step:serialize_instruction");
+        disp_trace!("[disp] step:serialize_instruction");
         let instruction_data = Program::serialize_instruction(instruction)
-            .map_err(|e| { eprintln!("[disp] FAIL serialize: {e}"); LDEX_AMM_ERR_SUBMIT })?;
+            .map_err(|_e| { disp_trace!("[disp] FAIL serialize: {_e}"); LDEX_AMM_ERR_SUBMIT })?;
 
         // RFP Usability #7: shielded input balance must cover the swap
         // (user_in is pre_state index 0; no gas leg on rc3 privacy txs).
@@ -1531,14 +1693,14 @@ pub unsafe extern "C" fn ldex_amm_disposable_swap_exact_in(
                 Ok(TokenHolding::Fungible { balance, .. }) => balance,
                 _ => 0,
             };
-            eprintln!("[disp] pre_check user_in_balance={bal} swap_amount_in={swap_amount_in}");
+            disp_trace!("[disp] pre_check user_in_balance={bal} swap_amount_in={swap_amount_in}");
             if bal < swap_amount_in {
                 return Err(ExecutionFailureKind::InsufficientFundsError);
             }
             Ok(())
         };
 
-        eprintln!("[disp] step:send_privacy_preserving_tx");
+        disp_trace!("[disp] step:send_privacy_preserving_tx");
         let (hash, _secrets) = p
             .wallet
             .send_privacy_preserving_tx_with_pre_check(
@@ -1548,12 +1710,12 @@ pub unsafe extern "C" fn ldex_amm_disposable_swap_exact_in(
                 pre_check,
             )
             .await
-            .map_err(|e| { eprintln!("[disp] FAIL send: {e}  --debug-- {e:?}"); LDEX_AMM_ERR_SUBMIT })?;
-        eprintln!("[disp] step:poll_native_token_transfer");
+            .map_err(|_e| { disp_trace!("[disp] FAIL send: {_e}  --debug-- {_e:?}"); LDEX_AMM_ERR_SUBMIT })?;
+        disp_trace!("[disp] step:poll_native_token_transfer");
         p.wallet
             .poll_native_token_transfer(hash)
             .await
-            .map_err(|e| { eprintln!("[disp] FAIL poll: {e}  --debug-- {e:?}"); LDEX_AMM_ERR_SUBMIT })?;
+            .map_err(|_e| { disp_trace!("[disp] FAIL poll: {_e}  --debug-- {_e:?}"); LDEX_AMM_ERR_SUBMIT })?;
         let mut out = [0u8; 32];
         let h: &[u8] = hash.as_ref();
         if h.len() == 32 {
@@ -1645,29 +1807,41 @@ pub unsafe extern "C" fn ldex_amm_private_add_liquidity(
     let res: Result<[u8; 32], i32> = rt.block_on(async move {
         let p = prep_private(&cfg, &store, amm_pid, def_a, def_b, fees).await?;
         let lp_def = compute_liquidity_token_pda(amm_pid, p.pool);
+        // Align (vault, holding, max-amount) legs to the pool's canonical
+        // token-A: add_liquidity keys vault_a/user_holding_a(idx4)/max_a all
+        // to reserve_a, so a reversed-order call must flip all three (uhlp
+        // is the LP leg, unaffected).
+        let (vault_a, vault_b, h_a, h_b, max_a, max_b) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, def_a).await? {
+                (p.vault_b, p.vault_a, uhb, uha,
+                 max_amount_to_add_token_b, max_amount_to_add_token_a)
+            } else {
+                (p.vault_a, p.vault_b, uha, uhb,
+                 max_amount_to_add_token_a, max_amount_to_add_token_b)
+            };
         // Account order = AMM `add_liquidity` guest signature
         // (clock threaded last per §5.11③).
         let accounts = vec![
             PrivacyPreservingAccount::Public(p.pool),
-            PrivacyPreservingAccount::Public(p.vault_a),
-            PrivacyPreservingAccount::Public(p.vault_b),
+            PrivacyPreservingAccount::Public(vault_a),
+            PrivacyPreservingAccount::Public(vault_b),
             PrivacyPreservingAccount::Public(lp_def),
-            PrivacyPreservingAccount::PrivateOwned(uha),
-            PrivacyPreservingAccount::PrivateOwned(uhb),
+            PrivacyPreservingAccount::PrivateOwned(h_a),
+            PrivacyPreservingAccount::PrivateOwned(h_b),
             PrivacyPreservingAccount::PrivateOwned(uhlp),
             PrivacyPreservingAccount::Public(CLOCK_01),
         ];
         let instruction = Instruction::AddLiquidity {
             min_amount_liquidity,
-            max_amount_to_add_token_a,
-            max_amount_to_add_token_b,
+            max_amount_to_add_token_a: max_a,
+            max_amount_to_add_token_b: max_b,
             deadline,
         };
         let instruction_data = Program::serialize_instruction(instruction)
             .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
 
         // Shielded inputs must cover what's being added (RFP Usability #7).
-        // uha = pre_state idx 4, uhb = idx 5.
+        // h_a = pre_state idx 4, h_b = idx 5 (aligned to slot, with max_a/b).
         let pre_check = move |pre: &[&nssa_core::account::Account]| {
             let bal = |i: usize| -> u128 {
                 pre.get(i)
@@ -1678,7 +1852,7 @@ pub unsafe extern "C" fn ldex_amm_private_add_liquidity(
                     })
                     .unwrap_or(0)
             };
-            if bal(4) < max_amount_to_add_token_a || bal(5) < max_amount_to_add_token_b {
+            if bal(4) < max_a || bal(5) < max_b {
                 return Err(ExecutionFailureKind::InsufficientFundsError);
             }
             Ok(())
@@ -1789,20 +1963,32 @@ pub unsafe extern "C" fn ldex_amm_private_remove_liquidity(
     let res: Result<[u8; 32], i32> = rt.block_on(async move {
         let p = prep_private(&cfg, &store, amm_pid, def_a, def_b, fees).await?;
         let lp_def = compute_liquidity_token_pda(amm_pid, p.pool);
+        // Align (vault, holding, min-amount) legs to the pool's canonical
+        // token-A: remove keys vault_a/user_holding_a(idx4)/min_a all to
+        // reserve_a, so a reversed-order call must flip all three (uhlp is
+        // the LP leg, the pre_check target, unaffected).
+        let (vault_a, vault_b, h_a, h_b, min_a, min_b) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, def_a).await? {
+                (p.vault_b, p.vault_a, uhb, uha,
+                 min_amount_to_remove_token_b, min_amount_to_remove_token_a)
+            } else {
+                (p.vault_a, p.vault_b, uha, uhb,
+                 min_amount_to_remove_token_a, min_amount_to_remove_token_b)
+            };
         let accounts = vec![
             PrivacyPreservingAccount::Public(p.pool),
-            PrivacyPreservingAccount::Public(p.vault_a),
-            PrivacyPreservingAccount::Public(p.vault_b),
+            PrivacyPreservingAccount::Public(vault_a),
+            PrivacyPreservingAccount::Public(vault_b),
             PrivacyPreservingAccount::Public(lp_def),
-            PrivacyPreservingAccount::PrivateOwned(uha),
-            PrivacyPreservingAccount::PrivateOwned(uhb),
+            PrivacyPreservingAccount::PrivateOwned(h_a),
+            PrivacyPreservingAccount::PrivateOwned(h_b),
             PrivacyPreservingAccount::PrivateOwned(uhlp),
             PrivacyPreservingAccount::Public(CLOCK_01),
         ];
         let instruction = Instruction::RemoveLiquidity {
             remove_liquidity_amount,
-            min_amount_to_remove_token_a,
-            min_amount_to_remove_token_b,
+            min_amount_to_remove_token_a: min_a,
+            min_amount_to_remove_token_b: min_b,
             deadline,
         };
         let instruction_data = Program::serialize_instruction(instruction)
@@ -2142,14 +2328,24 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap_inproof(
         } else {
             return Err(LDEX_AMM_ERR_ACCOUNT);
         };
+        // Align the (vault, a-holding) legs to the pool's canonical
+        // token-A: disposable_swap asserts vault_a == pool.vault_a_id and
+        // pairs a_holding_a with vault_a (token_definition_id_in picks the
+        // swap direction), so flip both together on a reversed-order call.
+        let (vault_a, vault_b, a_a, a_b) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, def_a).await? {
+                (p.vault_b, p.vault_a, a_b, a_a)
+            } else {
+                (p.vault_a, p.vault_b, a_a, a_b)
+            };
 
         let accounts = vec![
             PrivacyPreservingAccount::PrivateOwned(user_in),
             PrivacyPreservingAccount::Public(a_a),
             PrivacyPreservingAccount::Public(a_b),
             PrivacyPreservingAccount::Public(p.pool),
-            PrivacyPreservingAccount::Public(p.vault_a),
-            PrivacyPreservingAccount::Public(p.vault_b),
+            PrivacyPreservingAccount::Public(vault_a),
+            PrivacyPreservingAccount::Public(vault_b),
             PrivacyPreservingAccount::PrivateOwned(user_out),
         ];
         let instruction = amm_v2_core::Instruction::DisposableSwap {
@@ -2398,10 +2594,20 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap(
             token_definition_id_in: tok_in,
             deadline,
         };
+        // Align the (vault, a-holding) legs to the pool's canonical
+        // token-A: swap_exact_input asserts vault_a == pool.vault_a_id and
+        // pairs a_a with vault_a, so flip both on a reversed-order call
+        // (token_definition_id_in picks the direction).
+        let (vault_a, vault_b, sw_a_a, sw_a_b) =
+            if pool_needs_leg_flip(&wallet, p.pool, def_a).await? {
+                (p.vault_b, p.vault_a, a_b, a_a)
+            } else {
+                (p.vault_a, p.vault_b, a_a, a_b)
+            };
         if let Err(e) = finalize(
             &wallet,
             amm_v2_pid,
-            vec![p.pool, p.vault_a, p.vault_b, a_a, a_b],
+            vec![p.pool, vault_a, vault_b, sw_a_a, sw_a_b],
             &[a_in],
             swap_instr,
         )
@@ -2416,7 +2622,7 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap(
                 token_core::Instruction::Transfer { amount_to_transfer: swap_amount_in },
             )
             .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
-            if let Ok((hb, _)) = wallet
+            if let Ok((hb, secrets_back)) = wallet
                 .send_privacy_preserving_tx(
                     vec![
                         PrivacyPreservingAccount::Public(a_in),
@@ -2427,7 +2633,22 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap(
                 )
                 .await
             {
-                let _ = wallet.poll_native_token_transfer(hb).await;
+                // Fold the reshield credit back into the local cache:
+                // tx1 already decremented `user_in`'s cached PRIV balance by
+                // swap_amount_in, so without this the cache stays understated
+                // until a full rescan and a later pre_check could falsely
+                // fail. Best-effort, mirroring the tx1/tx3 success folds.
+                if let Ok(NSSATransaction::PrivacyPreserving(ppt)) =
+                    wallet.poll_native_token_transfer(hb).await
+                {
+                    if let Some(s) = secrets_back.into_iter().next() {
+                        let _ = wallet.decode_insert_privacy_preserving_transaction_results(
+                            &ppt,
+                            &[AccDecodeData::Decode(s, user_in)],
+                        );
+                        let _ = wallet.store_persistent_data().await;
+                    }
+                }
             }
             return Err(e);
         }
@@ -2622,15 +2843,27 @@ pub unsafe extern "C" fn ldex_amm_v2_add_liquidity(
     let res = rt.block_on(async move {
         let p = prep(&cfg, &store, amm_pid, uha, uhb, fees).await?;
         let lp_def = compute_liquidity_token_pda(amm_pid, p.pool);
+        // Align (vault, holding, max-amount) legs to the pool's canonical
+        // token-A: add_liquidity keys vault_a/user_holding_a/max_a all to
+        // reserve_a, so a reversed-order call must flip all three (uhlp is
+        // the LP leg, unaffected).
+        let (vault_a, vault_b, h_a, h_b, max_a, max_b) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, p.def_a).await? {
+                (p.vault_b, p.vault_a, uhb, uha,
+                 max_amount_to_add_token_b, max_amount_to_add_token_a)
+            } else {
+                (p.vault_a, p.vault_b, uha, uhb,
+                 max_amount_to_add_token_a, max_amount_to_add_token_b)
+            };
         // 7-account list, NO Clock.
-        let account_ids = vec![p.pool, p.vault_a, p.vault_b, lp_def, uha, uhb, uhlp];
+        let account_ids = vec![p.pool, vault_a, vault_b, lp_def, h_a, h_b, uhlp];
         let instruction = amm_v2_core::Instruction::AddLiquidity {
             min_amount_liquidity,
-            max_amount_to_add_token_a,
-            max_amount_to_add_token_b,
+            max_amount_to_add_token_a: max_a,
+            max_amount_to_add_token_b: max_b,
             deadline,
         };
-        finalize(&p.wallet, amm_pid, account_ids, &[uha, uhb], instruction).await
+        finalize(&p.wallet, amm_pid, account_ids, &[h_a, h_b], instruction).await
     });
     out32(res, out_tx_hash)
 }
@@ -2674,11 +2907,23 @@ pub unsafe extern "C" fn ldex_amm_v2_remove_liquidity(
     let res = rt.block_on(async move {
         let p = prep(&cfg, &store, amm_pid, uha, uhb, fees).await?;
         let lp_def = compute_liquidity_token_pda(amm_pid, p.pool);
-        let account_ids = vec![p.pool, p.vault_a, p.vault_b, lp_def, uha, uhb, uhlp];
+        // Align (vault, holding, min-amount) legs to the pool's canonical
+        // token-A: remove_liquidity keys vault_a/user_holding_a/min_a all to
+        // reserve_a, so a reversed-order call must flip all three (uhlp is
+        // the LP leg, the sole signer, unaffected).
+        let (vault_a, vault_b, h_a, h_b, min_a, min_b) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, p.def_a).await? {
+                (p.vault_b, p.vault_a, uhb, uha,
+                 min_amount_to_remove_token_b, min_amount_to_remove_token_a)
+            } else {
+                (p.vault_a, p.vault_b, uha, uhb,
+                 min_amount_to_remove_token_a, min_amount_to_remove_token_b)
+            };
+        let account_ids = vec![p.pool, vault_a, vault_b, lp_def, h_a, h_b, uhlp];
         let instruction = amm_v2_core::Instruction::RemoveLiquidity {
             remove_liquidity_amount,
-            min_amount_to_remove_token_a,
-            min_amount_to_remove_token_b,
+            min_amount_to_remove_token_a: min_a,
+            min_amount_to_remove_token_b: min_b,
             deadline,
         };
         finalize(&p.wallet, amm_pid, account_ids, &[uhlp], instruction).await
@@ -2731,8 +2976,19 @@ pub unsafe extern "C" fn ldex_amm_v2_swap_exact_in(
         } else {
             return Err(LDEX_AMM_ERR_ACCOUNT);
         };
+        // Align (vault, holding) legs to the pool's canonical token-A:
+        // swap_exact_input asserts vault_a == pool.vault_a_id and pairs
+        // vault_a with user_holding_a, so if the caller passed the pair
+        // reversed, flip both vaults and holdings together
+        // (token_definition_id_in / signer disambiguate the direction).
+        let (vault_a, vault_b, h_a, h_b) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, p.def_a).await? {
+                (p.vault_b, p.vault_a, uhb, uha)
+            } else {
+                (p.vault_a, p.vault_b, uha, uhb)
+            };
         // 5-account list, NO Clock.
-        let account_ids = vec![p.pool, p.vault_a, p.vault_b, uha, uhb];
+        let account_ids = vec![p.pool, vault_a, vault_b, h_a, h_b];
         let instruction = amm_v2_core::Instruction::SwapExactInput {
             swap_amount_in,
             min_amount_out,
@@ -2809,9 +3065,21 @@ pub unsafe extern "C" fn ldex_amm_v2_private_swap_exact_in(
     };
     let res: Result<[u8; 32], i32> = rt.block_on(async move {
         let p = prep_private(&cfg, &store, amm_pid, def_a, def_b, fees).await?;
-        let input_idx = if def_a == tok_in {
+        // Align (vault, holding) legs to the pool's canonical token-A:
+        // swap_exact_input_circuit asserts vault_a == pool.vault_a_id and
+        // pairs vault_a (idx1) with user_holding_a (idx3), so if the
+        // caller passed the pair reversed, flip both vaults and holdings
+        // together. token_definition_id_in disambiguates the direction.
+        let flip = pool_needs_leg_flip(&p.wallet, p.pool, def_a).await?;
+        let (vault_a, vault_b, h_a, h_b, slot_a_def, slot_b_def) = if flip {
+            (p.vault_b, p.vault_a, uhb, uha, def_b, def_a)
+        } else {
+            (p.vault_a, p.vault_b, uha, uhb, def_a, def_b)
+        };
+        // Input holding index in the (now canonical) account list.
+        let input_idx = if slot_a_def == tok_in {
             3usize
-        } else if def_b == tok_in {
+        } else if slot_b_def == tok_in {
             4usize
         } else {
             return Err(LDEX_AMM_ERR_ACCOUNT);
@@ -2819,10 +3087,10 @@ pub unsafe extern "C" fn ldex_amm_v2_private_swap_exact_in(
         // 5-account list, NO Clock.
         let accounts = vec![
             PrivacyPreservingAccount::Public(p.pool),
-            PrivacyPreservingAccount::Public(p.vault_a),
-            PrivacyPreservingAccount::Public(p.vault_b),
-            PrivacyPreservingAccount::PrivateOwned(uha),
-            PrivacyPreservingAccount::PrivateOwned(uhb),
+            PrivacyPreservingAccount::Public(vault_a),
+            PrivacyPreservingAccount::Public(vault_b),
+            PrivacyPreservingAccount::PrivateOwned(h_a),
+            PrivacyPreservingAccount::PrivateOwned(h_b),
         ];
         let instruction = amm_v2_core::Instruction::SwapExactInputCircuit {
             swap_amount_in,
@@ -2956,25 +3224,38 @@ pub unsafe extern "C" fn ldex_amm_v2_private_add_liquidity(
     let res: Result<[u8; 32], i32> = rt.block_on(async move {
         let p = prep_private(&cfg, &store, amm_pid, def_a, def_b, fees).await?;
         let lp_def = compute_liquidity_token_pda(amm_pid, p.pool);
+        // Align (vault, holding, max-amount) legs to the pool's canonical
+        // token-A: add_liquidity keys vault_a/user_holding_a/max_a all to
+        // reserve_a, so a reversed-order call must flip all three (the LP
+        // leg uhlp/lp_def is unaffected).
+        let (vault_a, vault_b, h_a, h_b, max_a, max_b) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, def_a).await? {
+                (p.vault_b, p.vault_a, uhb, uha,
+                 max_amount_to_add_token_b, max_amount_to_add_token_a)
+            } else {
+                (p.vault_a, p.vault_b, uha, uhb,
+                 max_amount_to_add_token_a, max_amount_to_add_token_b)
+            };
         let accounts = vec![
             PrivacyPreservingAccount::Public(p.pool),
-            PrivacyPreservingAccount::Public(p.vault_a),
-            PrivacyPreservingAccount::Public(p.vault_b),
+            PrivacyPreservingAccount::Public(vault_a),
+            PrivacyPreservingAccount::Public(vault_b),
             PrivacyPreservingAccount::Public(lp_def),
-            PrivacyPreservingAccount::PrivateOwned(uha),
-            PrivacyPreservingAccount::PrivateOwned(uhb),
+            PrivacyPreservingAccount::PrivateOwned(h_a),
+            PrivacyPreservingAccount::PrivateOwned(h_b),
             PrivacyPreservingAccount::PrivateOwned(uhlp),
         ];
         let instruction = amm_v2_core::Instruction::AddLiquidity {
             min_amount_liquidity,
-            max_amount_to_add_token_a,
-            max_amount_to_add_token_b,
+            max_amount_to_add_token_a: max_a,
+            max_amount_to_add_token_b: max_b,
             deadline,
         };
         let instruction_data = Program::serialize_instruction(instruction)
             .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
 
-        // Pre-check: PRIV_A (idx 4) and PRIV_B (idx 5) must cover the deposit.
+        // Pre-check: token-A holding (idx 4) and token-B holding (idx 5)
+        // must cover the deposit. Indices/amounts are in the aligned order.
         let pre_check = move |pre: &[&nssa_core::account::Account]| {
             let bal_at = |idx: usize| -> u128 {
                 pre.get(idx)
@@ -2985,9 +3266,7 @@ pub unsafe extern "C" fn ldex_amm_v2_private_add_liquidity(
                     })
                     .unwrap_or(0)
             };
-            if bal_at(4) < max_amount_to_add_token_a
-                || bal_at(5) < max_amount_to_add_token_b
-            {
+            if bal_at(4) < max_a || bal_at(5) < max_b {
                 return Err(ExecutionFailureKind::InsufficientFundsError);
             }
             Ok(())
@@ -3087,19 +3366,31 @@ pub unsafe extern "C" fn ldex_amm_v2_private_remove_liquidity(
     let res: Result<[u8; 32], i32> = rt.block_on(async move {
         let p = prep_private(&cfg, &store, amm_pid, def_a, def_b, fees).await?;
         let lp_def = compute_liquidity_token_pda(amm_pid, p.pool);
+        // Align (vault, holding, min-amount) legs to the pool's canonical
+        // token-A: remove_liquidity keys vault_a/user_holding_a/min_a all
+        // to reserve_a, so a reversed-order call must flip all three (the
+        // LP leg uhlp/lp_def and remove_liquidity_amount are unaffected).
+        let (vault_a, vault_b, h_a, h_b, min_a, min_b) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, def_a).await? {
+                (p.vault_b, p.vault_a, uhb, uha,
+                 min_amount_to_remove_token_b, min_amount_to_remove_token_a)
+            } else {
+                (p.vault_a, p.vault_b, uha, uhb,
+                 min_amount_to_remove_token_a, min_amount_to_remove_token_b)
+            };
         let accounts = vec![
             PrivacyPreservingAccount::Public(p.pool),
-            PrivacyPreservingAccount::Public(p.vault_a),
-            PrivacyPreservingAccount::Public(p.vault_b),
+            PrivacyPreservingAccount::Public(vault_a),
+            PrivacyPreservingAccount::Public(vault_b),
             PrivacyPreservingAccount::Public(lp_def),
-            PrivacyPreservingAccount::PrivateOwned(uha),
-            PrivacyPreservingAccount::PrivateOwned(uhb),
+            PrivacyPreservingAccount::PrivateOwned(h_a),
+            PrivacyPreservingAccount::PrivateOwned(h_b),
             PrivacyPreservingAccount::PrivateOwned(uhlp),
         ];
         let instruction = amm_v2_core::Instruction::RemoveLiquidity {
             remove_liquidity_amount,
-            min_amount_to_remove_token_a,
-            min_amount_to_remove_token_b,
+            min_amount_to_remove_token_a: min_a,
+            min_amount_to_remove_token_b: min_b,
             deadline,
         };
         let instruction_data = Program::serialize_instruction(instruction)
@@ -3237,7 +3528,7 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap_native_in(
     let res: Result<[u8; 32], i32> = rt.block_on(async move {
         // Pool PDA derives from (amm_v2_pid, wlez_def, token_def_out, fees).
         let p = prep_private(&cfg, &store, amm_pid, wlez_def_id_, token_def_out_id, fees).await?;
-        let mut p = p; align_prep_to_pool(&mut p, amm_pid, wlez_def_id_).await?;
+        let mut p = p; align_prep_to_pool(&mut p, wlez_def_id_).await?;
 
         let accounts = vec![
             PrivacyPreservingAccount::Public(user_native_id),
@@ -3389,7 +3680,7 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap_native_out(
     };
     let res: Result<[u8; 32], i32> = rt.block_on(async move {
         let p = prep_private(&cfg, &store, amm_pid, token_def_in_id, wlez_def_id_, fees).await?;
-        let mut p = p; align_prep_to_pool(&mut p, amm_pid, token_def_in_id).await?;
+        let mut p = p; align_prep_to_pool(&mut p, token_def_in_id).await?;
 
         let accounts = vec![
             PrivacyPreservingAccount::PrivateOwned(user_holding_in_id),
@@ -3496,7 +3787,18 @@ pub unsafe extern "C" fn ldex_amm_v2_swap_exact_in_ata(
     let res = rt.block_on(async move {
         let (ata_pid, ata_a, ata_b) = ata_env_ctx(owner_id, def_a, def_b)?;
         let p = prep(&cfg, &store, amm_pid, ata_a, ata_b, fees).await?;
-        let account_ids = vec![p.pool, p.vault_a, p.vault_b, owner_id, ata_a, ata_b];
+        // Align the (vault, ata) legs to the pool's canonical token-A.
+        // The handler asserts vault_a == pool.vault_a_id and pairs
+        // vault_a with ata_a; if the caller passed the pair reversed,
+        // flip both together (token_definition_id_in disambiguates the
+        // swap direction independently).
+        let (vault_a, vault_b, ata_a, ata_b) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, def_a).await? {
+                (p.vault_b, p.vault_a, ata_b, ata_a)
+            } else {
+                (p.vault_a, p.vault_b, ata_a, ata_b)
+            };
+        let account_ids = vec![p.pool, vault_a, vault_b, owner_id, ata_a, ata_b];
         let instruction = amm_v2_core::Instruction::SwapExactInputAta {
             swap_amount_in, min_amount_out,
             token_definition_id_in: tok_in,
@@ -3541,7 +3843,15 @@ pub unsafe extern "C" fn ldex_amm_v2_swap_exact_out_ata(
     let res = rt.block_on(async move {
         let (ata_pid, ata_a, ata_b) = ata_env_ctx(owner_id, def_a, def_b)?;
         let p = prep(&cfg, &store, amm_pid, ata_a, ata_b, fees).await?;
-        let account_ids = vec![p.pool, p.vault_a, p.vault_b, owner_id, ata_a, ata_b];
+        // Align (vault, ata) legs to the pool's canonical token-A; see
+        // ldex_amm_v2_swap_exact_in_ata.
+        let (vault_a, vault_b, ata_a, ata_b) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, def_a).await? {
+                (p.vault_b, p.vault_a, ata_b, ata_a)
+            } else {
+                (p.vault_a, p.vault_b, ata_a, ata_b)
+            };
+        let account_ids = vec![p.pool, vault_a, vault_b, owner_id, ata_a, ata_b];
         let instruction = amm_v2_core::Instruction::SwapExactOutputAta {
             exact_amount_out, max_amount_in,
             token_definition_id_in: tok_in,
@@ -3588,9 +3898,21 @@ pub unsafe extern "C" fn ldex_amm_v2_add_liquidity_ata(
         // ATA-LP holding derives from (owner, lp_def) under the same ATA program.
         let ata_lp = ata_core::get_associated_token_account_id(
             &ata_pid, &ata_core::compute_ata_seed(owner_id, lp_def));
-        let account_ids = vec![p.pool, p.vault_a, p.vault_b, lp_def, owner_id, ata_a, ata_b, ata_lp];
+        // Align (vault, ata, max-amount) legs to the pool's canonical
+        // token-A: add_liquidity_ata keys vault_a/ata_a/max_a all to
+        // reserve_a, so a reversed-order call must flip all three (ata_lp
+        // is the LP leg, unaffected).
+        let (vault_a, vault_b, ata_a, ata_b, max_a, max_b) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, def_a).await? {
+                (p.vault_b, p.vault_a, ata_b, ata_a,
+                 max_amount_to_add_token_b, max_amount_to_add_token_a)
+            } else {
+                (p.vault_a, p.vault_b, ata_a, ata_b,
+                 max_amount_to_add_token_a, max_amount_to_add_token_b)
+            };
+        let account_ids = vec![p.pool, vault_a, vault_b, lp_def, owner_id, ata_a, ata_b, ata_lp];
         let instruction = amm_v2_core::Instruction::AddLiquidityAta {
-            min_amount_liquidity, max_amount_to_add_token_a, max_amount_to_add_token_b,
+            min_amount_liquidity, max_amount_to_add_token_a: max_a, max_amount_to_add_token_b: max_b,
             ata_program_id: ata_pid, deadline,
         };
         finalize(&p.wallet, amm_pid, account_ids, &[owner_id], instruction).await
@@ -3694,14 +4016,26 @@ pub unsafe extern "C" fn ldex_amm_v2_remove_liquidity_ata(
         let lp_def = compute_liquidity_token_pda(amm_pid, p.pool);
         let ata_lp = ata_core::get_associated_token_account_id(
             &ata_pid, &ata_core::compute_ata_seed(owner_id, lp_def));
+        // Align (vault, ata, min-amount) legs to the pool's canonical
+        // token-A: remove_liquidity_ata keys vault_a/ata_a/min_a all to
+        // reserve_a and asserts ata_a == ATA(owner, pool.token_a), so a
+        // reversed-order call must flip all three (ata_lp is the LP leg).
+        let (vault_a, vault_b, ata_a, ata_b, min_a, min_b) =
+            if pool_needs_leg_flip(&p.wallet, p.pool, def_a).await? {
+                (p.vault_b, p.vault_a, ata_b, ata_a,
+                 min_amount_to_remove_token_b, min_amount_to_remove_token_a)
+            } else {
+                (p.vault_a, p.vault_b, ata_a, ata_b,
+                 min_amount_to_remove_token_a, min_amount_to_remove_token_b)
+            };
         let account_ids = vec![
-            p.pool, p.vault_a, p.vault_b, lp_def,
+            p.pool, vault_a, vault_b, lp_def,
             owner_id, ata_a, ata_b, ata_lp,
         ];
         let instruction = amm_v2_core::Instruction::RemoveLiquidityAta {
             remove_liquidity_amount,
-            min_amount_to_remove_token_a,
-            min_amount_to_remove_token_b,
+            min_amount_to_remove_token_a: min_a,
+            min_amount_to_remove_token_b: min_b,
             ata_program_id: ata_pid, deadline,
         };
         finalize(&p.wallet, amm_pid, account_ids, &[owner_id], instruction).await
