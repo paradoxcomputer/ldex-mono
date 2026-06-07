@@ -69,7 +69,7 @@ fn create_swap_post_states(
     // integral uses the correct price for the elapsed interval.
     let mut oracle_pre = pool_def_data.clone();
     oracle_pre.oracle_update(clock_ts);
-    // Reserve + RFP Usability #3 volume/fee accumulators (shared helper —
+    // Reserve + RFP Usability #3 volume/fee accumulators (shared helper -
     // single source of truth). Applied to the pre-swap `pool_def_data`,
     // then the oracle ring/cum/ts are layered on from `oracle_pre`.
     let mut pool_post_definition =
@@ -172,7 +172,7 @@ pub fn swap_exact_input(
 ///
 /// Why this exists: privacy-preserving transactions commit every
 /// `public_pre_state` into the proof's journal at proof-start time.
-/// `CLOCK_01` advances every block — by the time a CPU-bound real ZK
+/// `CLOCK_01` advances every block - by the time a CPU-bound real ZK
 /// proof completes (~minutes), many blocks have elapsed and the
 /// sequencer's CURRENT clock value no longer matches what the proof
 /// committed. Verification fails with `InvalidPrivacyPreservingProof`.

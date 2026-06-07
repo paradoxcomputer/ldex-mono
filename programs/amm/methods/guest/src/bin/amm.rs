@@ -226,7 +226,7 @@ mod amm {
             .with_timestamp_validity_window(..deadline))
     }
 
-    /// `SwapExactInput` without the clock account — for use inside a
+    /// `SwapExactInput` without the clock account - for use inside a
     /// privacy-preserving transaction's chained-call tree. See
     /// `core::Instruction::SwapExactInputCircuit` for the full
     /// rationale (proof-time-vs-block-period mismatch on CPU). Public
@@ -288,7 +288,7 @@ mod amm {
             .with_timestamp_validity_window(..deadline))
     }
 
-    /// RFP Func #8 — swap with the user side using ATAs (owner-authorised).
+    /// RFP Func #8 - swap with the user side using ATAs (owner-authorised).
     /// Account order: `[pool, vault_a, vault_b, owner, ata_a, ata_b, clock]`.
     #[instruction]
     pub fn swap_exact_input_ata(
@@ -315,7 +315,7 @@ mod amm {
             .with_timestamp_validity_window(..deadline))
     }
 
-    /// RFP Func #8 — `SwapExactOutput` with the user side using ATAs.
+    /// RFP Func #8 - `SwapExactOutput` with the user side using ATAs.
     /// Account order: `[pool, vault_a, vault_b, owner, ata_a, ata_b, clock]`.
     #[instruction]
     pub fn swap_exact_output_ata(
@@ -342,7 +342,7 @@ mod amm {
             .with_timestamp_validity_window(..deadline))
     }
 
-    /// RFP Func #8 — `AddLiquidity` with the user side using ATAs.
+    /// RFP Func #8 - `AddLiquidity` with the user side using ATAs.
     /// Account order: `[pool, vault_a, vault_b, lp_def, owner, ata_a, ata_b, ata_lp, clock]`.
     #[instruction]
     pub fn add_liquidity_ata(

@@ -1,9 +1,9 @@
 //! Drift-free disposable-swap building-block tests (amm_v2 fix).
 //!
 //! The amm_v2 disposable swap (FFI `ldex_amm_v2_disposable_swap`) was changed
-//! from a SINGLE in-proof STARK — which named the public pool PDA as a
+//! from a SINGLE in-proof STARK - which named the public pool PDA as a
 //! committed pre-state and so was rejected (`InvalidPrivacyPreservingProof`)
-//! whenever a competing swap moved the pool during the minutes-long proof —
+//! whenever a competing swap moved the pool during the minutes-long proof -
 //! to a 3-transaction flow (deshield / **public** swap / reshield) whose only
 //! pool interaction is a proofless public `SwapExactInput`.
 //!
@@ -148,7 +148,7 @@ fn fungible_balance(state: &V03State, id: AccountId) -> u128 {
 /// Public `SwapExactInput`. Account order is positional:
 /// `[pool, vault_a, vault_b, token_a_side_holding, token_b_side_holding, CLOCK_01]`.
 /// Both holdings co-sign: the input pays, and the (possibly fresh) output
-/// authorises its own `new_claimed_if_default` claim — exactly what the
+/// authorises its own `new_claimed_if_default` claim - exactly what the
 /// drift-free FFI does (wallet owns both A holdings' keys).
 fn swap(
     state: &mut V03State,
@@ -248,7 +248,7 @@ fn public_swap_leg_is_drift_free_under_competing_swap() {
     let stale = expected_out_a_to_b(ra0, rb0, SWAP_IN);
 
     // Priced against LIVE (drifted) reserves, not the stale pre-competing
-    // snapshot — the guarantee the in-proof design could not give.
+    // snapshot - the guarantee the in-proof design could not give.
     assert_eq!(out_bal, live, "output priced against the live (moved) pool");
     assert_ne!(live, stale, "live vs stale output must differ so drift is real");
     assert_eq!(fungible_balance(&state, id_of(&a_in)), 0, "input fully consumed");

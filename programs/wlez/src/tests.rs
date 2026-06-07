@@ -1,4 +1,4 @@
-//! Pure-function unit tests — exercise the WLEZ program without the
+//! Pure-function unit tests - exercise the WLEZ program without the
 //! zkVM. Run with `RISC0_DEV_MODE=1 cargo test -p wlez_program`.
 //!
 //! Coverage:
@@ -163,7 +163,7 @@ fn initialize_claims_vault_and_chains_new_definition() {
         "vault must be claimed at the WLEZ vault PDA"
     );
     // Vault post-state's program_owner must STAY at DEFAULT_PROGRAM_ID
-    // here — the framework rewrites it to wlez_program_id after the
+    // here - the framework rewrites it to wlez_program_id after the
     // Claim::Pda check passes (see lez/nssa/src/validated_state_diff.rs).
     // Setting it eagerly violates validate_execution rule 4 and the
     // sequencer rejects the tx with ModifiedProgramOwner.
@@ -322,7 +322,7 @@ fn wrap_rejects_wrong_holding_definition() {
 
 #[test]
 fn unwrap_emits_burn_and_direct_vault_native_post_states() {
-    // Note: the native release is NOT a chained call — see the comment
+    // Note: the native release is NOT a chained call - see the comment
     // block at the top of unwrap.rs. WLEZ directly mutates vault and
     // user_native in its own post_states because the sequencer's
     // ownership rule blocks `auth_transfer` from decreasing a
@@ -362,7 +362,7 @@ fn unwrap_emits_burn_and_direct_vault_native_post_states() {
         250,
         "user_native must receive `amount`"
     );
-    // Sanity — neither account changes program_owner.
+    // Sanity - neither account changes program_owner.
     assert_eq!(post_states[2].account().program_owner, WLEZ_PROGRAM_ID);
     assert_eq!(post_states[3].account().program_owner, NATIVE_PROGRAM_ID);
 }

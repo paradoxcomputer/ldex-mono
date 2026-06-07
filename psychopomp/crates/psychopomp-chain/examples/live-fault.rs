@@ -69,7 +69,7 @@ async fn main() -> anyhow::Result<()> {
     let operator_acc = parse_account_id("7wHg9sbJwc6h3NP1S9bekfAzB8CHifEcxKswCKUt3YQo")?;
     let chain = PsychopompChain::connect(ENDPOINT)?;
 
-    // [1] Register operator (idempotent — skip if already present).
+    // [1] Register operator (idempotent - skip if already present).
     let op_pda = operator_pda(&registry_id, &OPERATOR_PK);
     if chain.get_operator_state(op_pda).await?.is_none() {
         println!("[1] registering operator at {op_pda:?}");

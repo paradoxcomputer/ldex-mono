@@ -1,11 +1,11 @@
 //! Wallet-side SDK.
 //!
 //! Public surface:
-//! - [`prove`] — outsource one job to one operator. Verifies attestation,
+//! - [`prove`] - outsource one job to one operator. Verifies attestation,
 //!   ECDH-encrypts the witness, posts, polls, verifies the returned Receipt.
-//! - [`prove_multi`] — fan out to N operators in parallel; first valid response
-//!   wins (README §"Censorship — Multi-route by default").
-//! - [`ensure_elf_cached`] — probe the operator's `/v0/elf` cache and upload
+//! - [`prove_multi`] - fan out to N operators in parallel; first valid response
+//!   wins (README §"Censorship - Multi-route by default").
+//! - [`ensure_elf_cached`] - probe the operator's `/v0/elf` cache and upload
 //!   on miss, so the JobRequest can use `GuestElfRef::Cached` and skip the
 //!   inline-ELF round trip on every call (big win for LDEX's ~2 MB privacy
 //!   circuit).
@@ -146,7 +146,7 @@ pub async fn prove(
 
 /// Same as `prove`, but wraps the AEAD key in a sequential-work puzzle. The
 /// operator must compute `puzzle.solve()` before they can decrypt the
-/// witness. README §"MEV / front-running" — time-locked encryption for the
+/// witness. README §"MEV / front-running" - time-locked encryption for the
 /// highest-sensitivity jobs.
 pub async fn prove_with_timelock(
     cfg: &ClientConfig,
@@ -204,7 +204,7 @@ pub async fn prove_with_timelock(
     let base_key = derive_aead_key(shared.as_bytes(), &doc.nonce, &cfg.expected_mrenclave);
     // If a timelock puzzle is attached, XOR the AEAD key with the puzzle
     // output the operator MUST compute. Operator side does the same XOR
-    // after solving — symmetric.
+    // after solving - symmetric.
     let aead_key = match &timelock {
         Some(p) => {
             let mut k = base_key;
@@ -388,7 +388,7 @@ pub async fn prove_commit_reveal(
     let sig = Signature::from_bytes(&sig_bytes);
     vk.verify(&pre.signing_bytes(award.job_id, award.accepted_at), &sig)
         .map_err(|e| ClientError::Policy(format!("award sig verify: {e}")))?;
-    info!(job_id = %award.job_id, "award commitment verified — revealing ciphertext");
+    info!(job_id = %award.job_id, "award commitment verified - revealing ciphertext");
 
     // 3. Reveal the ciphertext.
     let reveal = serde_json::json!({ "ciphertext": hex::encode(&ct) });

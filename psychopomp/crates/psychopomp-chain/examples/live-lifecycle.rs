@@ -82,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
     // ---- Step 1: Register operator -------------------------------------------
     let op_pda = operator_pda(&registry_id, &OPERATOR_PK);
     if chain.get_operator_state(op_pda).await?.is_some() {
-        println!("[1] operator already registered on chain at {op_pda:?} — reusing");
+        println!("[1] operator already registered on chain at {op_pda:?} - reusing");
     } else {
         println!("[1] registering operator at {op_pda:?}");
         let (hash, _) = submit_register(

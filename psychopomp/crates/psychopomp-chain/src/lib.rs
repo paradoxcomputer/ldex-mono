@@ -319,7 +319,7 @@ pub async fn submit_fault(
 /// the operator-slot PDA so the caller can read state back.
 ///
 /// The `funder_account` is any wallet-managed public account whose
-/// `SigningKey` is available — it pays for the slot creation and signs the
+/// `SigningKey` is available - it pays for the slot creation and signs the
 /// authorization.
 pub async fn submit_register(
     wallet_config_path: &Path,

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "core",
   "category": "finance",
-  "description": "LDEX core module — DEX/prover backend (links wallet-ffi later)",
+  "description": "LDEX core module - DEX/prover backend (links wallet-ffi later)",
   "main": "ldex_core_plugin",
   "dependencies": [],
 

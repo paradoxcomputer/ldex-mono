@@ -2,7 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
-// LDEX — Uniswap-inspired UI. Light theme, hero swap card, pill nav,
+// LDEX - Uniswap-inspired UI. Light theme, hero swap card, pill nav,
 // gradient CTA. Logic unchanged: native ldex_core via logos.callModule.
 Item {
     id: root
@@ -26,7 +26,7 @@ Item {
     readonly property color brandTint: dark ? "#1e3a8a" : "#dbeafe"
     property color okCol:  dark ? "#3fb950" : "#15803d"
     property color errCol: dark ? "#f85149" : "#dc2626"
-    // Legacy aliases — kept so any external caller / mid-file
+    // Legacy aliases - kept so any external caller / mid-file
     // reference that still says `root.pink` resolves to the brand.
     readonly property color pink:  brand
     readonly property color pink2: brand2
@@ -45,7 +45,7 @@ Item {
         if (typeof logos !== "undefined" && logos.callModule) loadDev();
     })
     property bool statusOk:true
-    property string quoteOut:"—"; property string quoteSub:""
+    property string quoteOut:"-"; property string quoteSub:""
 
     // --- async action / loading-overlay state ---
     property bool   busy:false
@@ -57,7 +57,7 @@ Item {
     readonly property var proofMsgs:[
         "Deshielding your private balance…",
         "Generating the zero-knowledge proof…",
-        "This can take a few minutes — your keys never leave this device.",
+        "This can take a few minutes - your keys never leave this device.",
         "Re-shielding the output…",
         "Submitting to the sequencer…"]
 
@@ -68,7 +68,7 @@ Item {
     // overlay animates throughout. Either way the user gets clear,
     // non-frozen-looking feedback and double-submits are blocked.
     function runAction(m,a,title,sub){
-        if(root.busy){ setStatus("Already working — wait for the current op to settle.",false); return }
+        if(root.busy){ setStatus("Already working - wait for the current op to settle.",false); return }
         if(typeof logos==="undefined"||!logos.callModule){ setStatus("Open inside Basecamp",false); return }
         root.busyTitle=title||"Working…";
         root.busySub=sub||"";
@@ -77,7 +77,7 @@ Item {
         busyFailsafe.restart();
         // Use the ASYNC variant. The sync `callModule` uses a built-in
         // QtRO timeout of 20 s, which is fatal for private swaps (STARK
-        // proof generation legitimately takes minutes — the timeout is
+        // proof generation legitimately takes minutes - the timeout is
         // what produces `error 1 (InvalidMessage)` on the bridge).
         // 30-minute ceiling matches the busyFailsafe upper bound.
         var finished = false;
@@ -102,9 +102,9 @@ Item {
             if(ok && String(r).indexOf("tx=0x")>=0){
                 root.confirmHead = String(r);
                 root.confirmLeft = 16;
-                setStatus(root.confirmHead+"  —  confirming… 16s", true);
+                setStatus(root.confirmHead+"  -  confirming… 16s", true);
                 confirmTimer.restart();
-                // Force a private-balance sync — the action may have
+                // Force a private-balance sync - the action may have
                 // moved shielded balance, and we want the panel to
                 // reflect it without waiting for the 30s debounce.
                 maybeSyncPriv(true);
@@ -125,17 +125,17 @@ Item {
             // submit/poll job pump. Otherwise the bridge times out
             // before the plugin replies, the UI gets "Failed to invoke
             // callRemoteMethod" / "invalid response", and *the plugin
-            // keeps running the proof anyway* — blocking every other
+            // keeps running the proof anyway* - blocking every other
             // call until the proof completes (cascading the timeout
             // across pool list refreshes, balance reads, etc.).
             //
             // Async ops + their Start dispatcher:
-            //   privateSwapFor          → privateSwapForStart        (STARK ~10–15 min)
-            //   privateSwapNativeFor    → privateSwapNativeForStart  (STARK ~15–25 min)
-            //   shieldToken             → shieldTokenStart           (STARK ~3–5 min)
-            //   deshieldToken           → deshieldTokenStart         (STARK ~3–5 min)
+            //   privateSwapFor          → privateSwapForStart        (STARK ~10-15 min)
+            //   privateSwapNativeFor    → privateSwapNativeForStart  (STARK ~15-25 min)
+            //   shieldToken             → shieldTokenStart           (STARK ~3-5 min)
+            //   deshieldToken           → deshieldTokenStart         (STARK ~3-5 min)
             //   createPoolFor           → createPoolForStart         (multi-tx, can exceed 20 s)
-            //   wrapNative              → wrapNativeStart            (~15 s — within timeout
+            //   wrapNative              → wrapNativeStart            (~15 s - within timeout
             //                                                         but cascades if previous
             //                                                         op blocked the plugin)
             //   unwrapNative            → unwrapNativeStart          (same)
@@ -160,7 +160,7 @@ Item {
                     jobPollTimer.restart();
                     return;
                 }
-                // Validation error from *Start — no job spawned.
+                // Validation error from *Start - no job spawned.
                 onResult(startStr);
                 return;
             }
@@ -168,7 +168,7 @@ Item {
                 logos.callModuleAsync("ldex_core", m, a, onResult, 1800000);
             } else {
                 // Older SDK fallback (no async; 20 s ceiling, only safe for
-                // public/quick ops — privates will time out under this path).
+                // public/quick ops - privates will time out under this path).
                 Qt.callLater(function(){ onResult(logos.callModule("ldex_core",m,a)) });
             }
         } catch(e) {
@@ -178,7 +178,7 @@ Item {
     // --- job polling for long-running ops -----------------------------
     // `pendingJobOnResult` is the runAction callback for the current job;
     // we re-enter it once the plugin reports a terminal state. Polling
-    // every 5 s gives 720 attempts in the 60-min failsafe window — chosen
+    // every 5 s gives 720 attempts in the 60-min failsafe window - chosen
     // to cover real-mode mode-1 swaps on slower CPUs (measured 17 min for
     // mode-1 on this dev box; raised the cap so a 1.5x slower machine
     // doesn't false-fail). The plugin's internal busyFailsafe at 60 min
@@ -195,7 +195,7 @@ Item {
             root.pendingJobAttempts++;
             if (root.pendingJobAttempts > 720) {
                 var cb = root.pendingJobOnResult; root.pendingJobOnResult = null;
-                cb("Timeout (60 min). Proof may still finish in the background — check seq.log.");
+                cb("Timeout (60 min). Proof may still finish in the background - check seq.log.");
                 return;
             }
             var s = logos.callModule("ldex_core","jobStatus",[root.pendingJobId]);
@@ -206,12 +206,12 @@ Item {
                 var sec = root.pendingJobAttempts * 5;
                 var mm = Math.floor(sec / 60);
                 var ss = sec % 60;
-                root.busySub = "Proving privately — "
+                root.busySub = "Proving privately - "
                     + (mm > 0 ? (mm + "m ") : "") + ss + "s elapsed";
                 jobPollTimer.restart();
                 return;
             }
-            // Terminal — fire the callback (which clears busy/history).
+            // Terminal - fire the callback (which clears busy/history).
             var cb2 = root.pendingJobOnResult; root.pendingJobOnResult = null;
             cb2(s);
         }
@@ -227,13 +227,13 @@ Item {
                  ||String(r).indexOf("rc=")>=0||String(r).indexOf("error")>=0);
         var h=root.history.slice(); h.unshift({time:Qt.formatDateTime(new Date(),"hh:mm:ss"),
             action:m, result:String(r), ok:ok}); root.history=h;
-        if(ok && String(r).indexOf("tx=0x")>=0){ setStatus(r+"  —  waiting for block…",true); confirmTimer.restart() }
+        if(ok && String(r).indexOf("tx=0x")>=0){ setStatus(r+"  -  waiting for block…",true); confirmTimer.restart() }
         else setStatus(r,ok);
         refresh();
     }
     function loadDev(){
         var e=jget("devBootstrap",[]);
-        if(!e||typeof e!=="object"){ setStatus("Couldn't load dev setup — run scripts/bootstrap.sh",false); return }
+        if(!e||typeof e!=="object"){ setStatus("Couldn't load dev setup - run scripts/bootstrap.sh",false); return }
         root.env=e; root.loaded=!!(e.LDEX_AMM_V2_PROGRAM_ID&&e.LDEX_USER_HOLDING_A);
         setStatus(root.loaded?"Dev setup loaded ✓":"bootstrap.env missing keys",root.loaded);
         if(root.loaded){
@@ -289,12 +289,12 @@ Item {
     }
     // Cached native LEZ balance. The Balances panel reads this via the
     // catalog's LEZ row instead of synchronously calling `nativeBalance`
-    // inside `whitelistedBalances()` on every QML re-render — that was
+    // inside `whitelistedBalances()` on every QML re-render - that was
     // firing a wallet-open + network RPC per render, including during
     // animations + binding cascades. Now we read it once per `refresh()`.
     property string nativeBal: "0"
     // Throttle the wallet's private-balance sync. It used to fire inside
-    // `walletTokens` (every render) — scanning every block since
+    // `walletTokens` (every render) - scanning every block since
     // last_synced. Now we call it explicitly here, debounced by
     // syncSinceMs so back-to-back refreshes don't all trigger a full
     // sync.
@@ -303,7 +303,7 @@ Item {
         var force = forceMs===true;
         var now = Date.now();
         // Sync at most every 30 s unless caller forces (e.g. just after a
-        // private op). Private balances are local-cache reads — the only
+        // private op). Private balances are local-cache reads - the only
         // way they change is sync_to_block walking new blocks.
         if (!force && (now - root.lastPrivSyncMs) < 30000) return;
         root.lastPrivSyncMs = now;
@@ -326,10 +326,10 @@ Item {
     }
     function feeVal(){ return root.selFee }
     function dirVal(){ return 0 }   // pay = tokA always
-    function balOf(n){ for(var i=0;i<root.tokens.length;i++) if(root.tokens[i].name===n) return root.tokens[i].balance; return "—" }
+    function balOf(n){ for(var i=0;i<root.tokens.length;i++) if(root.tokens[i].name===n) return root.tokens[i].balance; return "-" }
     // Lookup helpers by def hex. Used by the private-swap dispatch to
     // refuse swaps whose pay-side shielded balance hasn't yet been
-    // synced into the wallet's local cache — otherwise the FFI feeds
+    // synced into the wallet's local cache - otherwise the FFI feeds
     // an empty pre-state to amm_v2 and the guest panics with
     // "chained-call pre-state must be an initialized Fungible token holding".
     function privBalanceForDef(defHex){
@@ -357,7 +357,7 @@ Item {
                 // account) + WLEZ holding (under the SPL token program).
                 // The user thinks of these together; both flow through
                 // the WLEZ wrap/unwrap bridge. Read from the cached
-                // `root.nativeBal` — calling `nativeBalance` directly
+                // `root.nativeBal` - calling `nativeBalance` directly
                 // here would fire a network RPC on every QML re-render.
                 var nat = root.nativeBal || "0";
                 var wlez = "0";
@@ -368,7 +368,7 @@ Item {
                 }
                 pub = nat;   // unwrapped (native, useful for tx fees)
                 priv = wlez; // wrapped (WLEZ, used by the AMM as a pool side)
-                // Sum into total (decimal strings within u64 range — JS
+                // Sum into total (decimal strings within u64 range - JS
                 // numbers are fine for the dev amount scale).
                 tot = String((parseFloat(nat)||0) + (parseFloat(wlez)||0));
             } else {
@@ -391,17 +391,17 @@ Item {
         return out;
     }
     function updateQuote(){
-        // Resolve amtIn's text via try/catch — if the TextField isn't in
+        // Resolve amtIn's text via try/catch - if the TextField isn't in
         // scope yet (card not materialized), fall back to the bound
         // mirror `root.amountInText`. Bounded so a ReferenceError never
         // takes the whole function down.
         var amt = "";
         try { amt = amtIn.text } catch(e) { amt = root.amountInText || "" }
         if (!root.loaded || amt.length === 0) {
-            root.quoteOut="—"; root.quoteSub=""; return
+            root.quoteOut="-"; root.quoteSub=""; return
         }
         if(!root.tokA.def||!root.tokB.def||root.tokA.def===root.tokB.def){
-            root.quoteOut="—"; root.quoteSub=""; return
+            root.quoteOut="-"; root.quoteSub=""; return
         }
         var p = findPool(root.tokA, root.tokB, root.selFee);
         if (!p){ root.quoteOut="no pool"; root.quoteSub=""; return }
@@ -427,16 +427,16 @@ Item {
         var dep = pairDirty;  // eslint-disable-line no-unused-vars
         return root.pairValidProp && (findPool(root.tokA, root.tokB, root.selFee) !== null);
     }
-    // Whether the selected pair matches the env's primary bootstrap pair —
+    // Whether the selected pair matches the env's primary bootstrap pair -
     // private modes (1/2/3) currently only have plumbing for that pair.
     function isEnvPair(){
         var a=root.env.LDEX_DEF_A||"", b=root.env.LDEX_DEF_B||"";
         return (root.tokA.def===a && root.tokB.def===b)
             || (root.tokA.def===b && root.tokB.def===a);
     }
-    // RFP Func #7 — user-editable slippage tolerance (%). Default 1.0.
+    // RFP Func #7 - user-editable slippage tolerance (%). Default 1.0.
     property real slipPct: 1.0
-    // RFP Func #8 — toggle the public-mode source between the keypair
+    // RFP Func #8 - toggle the public-mode source between the keypair
     // Public mode is now ATA-only (RFP Func #8): every trader holds tokens
     // in the deterministic `ATA(owner, definition)`. The previous keypair-
     // holding path is retired and the toggle is gone.
@@ -447,11 +447,11 @@ Item {
     // `LDEX_DEF_<L>` / `LDEX_HOLD_<L>` / `LDEX_ATA_<L>` are the real
     // on-chain ids the bootstrap wrote. Tokens beyond `LDEX_FUND_LIMIT`
     // (default 8) exist on chain but the user's ATA isn't funded for
-    // them — they appear in the picker but the ATA-swap path shows
+    // them - they appear in the picker but the ATA-swap path shows
     // "no funded ATA" until the user funds it from their keypair holding.
     property var customTokens: []
     function tokenColor(letter){
-        // Per-token swatch palette — distinct hues for the dev token
+        // Per-token swatch palette - distinct hues for the dev token
         // universe (TOKENA..TOKENJ). Picked to read against both the
         // light and dark backgrounds without re-shading.
         var p = ["#2563eb","#0ea5e9","#10b981","#f59e0b","#f5ac37",
@@ -482,7 +482,7 @@ Item {
                 priv: "",
                 funded: ataW.length>0,
                 shielded: false,
-                color: "#f5ac37",   // amber — matches LEZ branding
+                color: "#f5ac37",   // amber - matches LEZ branding
                 isNative: true
             });
         }
@@ -510,7 +510,7 @@ Item {
                 color:tokenColor(L)
             });
         }
-        // Custom tokens are merged with no funded holding/ATA — useful for
+        // Custom tokens are merged with no funded holding/ATA - useful for
         // looking up pools by pasting an arbitrary def_id.
         for (var j=0;j<root.customTokens.length;j++) c.push(root.customTokens[j]);
         return c;
@@ -520,7 +520,7 @@ Item {
     // canonicalised, so a pool created as (B, A) won't be found by
     // poolInfoFor(A, B). We try BOTH orderings and return whichever
     // exists (or null). `pa`/`pb` are the def ids in the pool's actual
-    // a/b orientation — the swap direction needs that.
+    // a/b orientation - the swap direction needs that.
     function findPool(tokX, tokY, fee){
         if (!tokX.def || !tokY.def || tokX.def===tokY.def) return null;
         var p = jget("poolInfoFor",[tokX.def, tokY.def, fee]);
@@ -570,7 +570,7 @@ Item {
         root.tokB = tokenBySym(root.tokB.sym);
         root.pairDirty++;
     }
-    // Available fee tiers for the current pair — recomputed when pairDirty
+    // Available fee tiers for the current pair - recomputed when pairDirty
     // changes (i.e., either side picker fired). Only fees whose pool
     // exists on chain (in EITHER ordering) are surfaced in the swap card.
     function availFees(){
@@ -598,7 +598,7 @@ Item {
     // Search query matches the env's def_a/def_b or the literal tokena/
     // tokenb symbols; sort modes: 0=Volume desc, 1=Fee asc, 2=TVL desc.
     function sortedPoolList(query, sortMode){
-        // Only existing pools — non-existent fee tiers are noise; users
+        // Only existing pools - non-existent fee tiers are noise; users
         // create new pools via the dedicated "+ New pool" screen.
         var list = (root.poolRows||[]).filter(function(p){ return p.exists===true });
         var stats = (root.stats && root.stats.pools) || [];
@@ -633,15 +633,15 @@ Item {
     }
     function minRecv(){
         var o=parseFloat(root.quoteOut); if(isNaN(o)) return "1";
-        var t=Math.max(0, Math.min(50, root.slipPct))/100;  // clamp 0–50%
+        var t=Math.max(0, Math.min(50, root.slipPct))/100;  // clamp 0-50%
         return String(Math.max(1, Math.floor(o*(1-t))))
     }
-    // RFP Usability #8 — effective price = out/in, oriented by swap direction.
+    // RFP Usability #8 - effective price = out/in, oriented by swap direction.
     function effPrice(){
         // Same boot-time guard as updateQuote.
-        if (typeof amtIn === "undefined") return "—";
+        if (typeof amtIn === "undefined") return "-";
         var i=parseFloat(amtIn.text), o=parseFloat(root.quoteOut);
-        if(isNaN(i)||i<=0||isNaN(o)||o<=0) return "—";
+        if(isNaN(i)||i<=0||isNaN(o)||o<=0) return "-";
         var p=o/i; var unit=root.dirVal()===0?"B/A":"A/B";
         return p.toFixed(p<1?6:4)+" "+unit;
     }
@@ -649,7 +649,7 @@ Item {
     function defB(){ return root.env.LDEX_DEF_B||"" }
 
     Timer{ id:quoteTimer; interval:600; repeat:false; onTriggered:root.updateQuote() }
-    // Confirm window — 1 s ticks, 16 s total (one block). Shows the
+    // Confirm window - 1 s ticks, 16 s total (one block). Shows the
     // remaining seconds in the toast so the user can see progress.
     // On the final tick we refresh balances + clear the toast.
     property string confirmHead: ""    // "Pool created. tx=0x…"
@@ -663,16 +663,16 @@ Item {
                 root.refresh();
                 root.setStatus(root.confirmHead+"  ✓ Confirmed.", true);
             } else {
-                root.setStatus(root.confirmHead+"  —  confirming… "
+                root.setStatus(root.confirmHead+"  -  confirming… "
                                +root.confirmLeft+"s", true);
             }
         }
     }
-    // Failsafe — if a bridge call never returns / errors out invisibly,
+    // Failsafe - if a bridge call never returns / errors out invisibly,
     // unstick the busy state after 60 minutes (real-proof upper bound).
     Timer{ id:busyFailsafe; interval:3600000; repeat:false; running:false
         onTriggered:{ if(root.busy){ root.busy=false;
-            root.setStatus("Bridge timeout — op may still be proving in the background. Refresh to check.",false) } } }
+            root.setStatus("Bridge timeout - op may still be proving in the background. Refresh to check.",false) } } }
 
     Rectangle{ anchors.fill:parent; gradient:Gradient{
         GradientStop{ position:0.0; color:root.dark ? "#0e1424" : "#eaf1fb" }
@@ -753,7 +753,7 @@ Item {
                                     text: modelData.def.length>20 ? (modelData.def.substring(0,12)+"…"+modelData.def.substring(modelData.def.length-6)) : modelData.def
                                     color: root.sub; font.pixelSize: 10 }
                                 Text { visible: !modelData.def || modelData.def.length===0
-                                    text: "no def — bootstrap to enable"
+                                    text: "no def - bootstrap to enable"
                                     color: root.errCol; font.pixelSize: 10; font.italic: true } } } } } }
             Text { Layout.fillWidth: true; color: root.sub; font.pixelSize: 10; wrapMode: Text.WordWrap
                 text: "Bootstrap pair (TOKENA/TOKENB) is the only pair with on-chain liquidity in dev. Custom defs enable pool lookup; create a pool in the Pools tab first." }
@@ -849,7 +849,7 @@ Item {
                         NumberAnimation on x { running:root.busy; loops:Animation.Infinite
                             from:-card.width*0.4; to:card.width; duration:1300 } } }
                 Text { visible:root.busy; Layout.alignment:Qt.AlignHCenter
-                    text:"Keep this open — proving happens on your device."
+                    text:"Keep this open - proving happens on your device."
                     color:root.sub; font.pixelSize:10 }
 
                 // ---- RESULT ----
@@ -1065,7 +1065,7 @@ Item {
                                                         Text{ text:"▾"; color:root.sub; font.pixelSize:10 } } } }
                                             Text{ text:root.quoteSub; color:root.sub; font.pixelSize:11 } } }
 
-                                    // Fee tier — discovered AFTER the pair is set, and only shows
+                                    // Fee tier - discovered AFTER the pair is set, and only shows
                                     // tiers whose pool exists on chain.
                                     RowLayout{ Layout.fillWidth:true; spacing:6
                                         Text{ text:"Fee tier"; color:root.sub; font.pixelSize:12 }
@@ -1077,7 +1077,7 @@ Item {
                                                     ? "Select a token for both sides."
                                                     : (root.tokA.def===root.tokB.def
                                                         ? "Pick two different tokens."
-                                                        : "No pool for this pair — create one in the Pools tab.")) }
+                                                        : "No pool for this pair - create one in the Pools tab.")) }
                                         Repeater{ visible:root.pairValidProp; model:root.availFeesList
                                             delegate:Rectangle{ implicitHeight:30
                                                 implicitWidth:flbl.implicitWidth+22; radius:14
@@ -1122,22 +1122,22 @@ Item {
                                         Text{ id:discl; anchors.fill:parent; anchors.margins:10
                                             wrapMode:Text.WordWrap; font.pixelSize:11; color:root.sub
                                             text: privSel.mode===0
-                                                ? "Public — fully transparent: your account address, trade size, direction and pool are all visible on-chain."
+                                                ? "Public - fully transparent: your account address, trade size, direction and pool are all visible on-chain."
                                                 : privSel.mode===1
-                                                ? "Private (strongest) — no public address ever appears on-chain. On-chain: trade size, direction, pool. Private: who traded, the source of funds, the destination, and any link between your trades. Atomic; single STARK proof on CPU."
-                                                : "Private-Disposable (RFP-literal) — a fresh single-use public address is created per trade and never reused, with net-zero flow through it. On-chain: that ephemeral address + trade size, direction, pool. Private: your identity and links across trades. Atomic; same proof cost as Private." } }
+                                                ? "Private (strongest) - no public address ever appears on-chain. On-chain: trade size, direction, pool. Private: who traded, the source of funds, the destination, and any link between your trades. Atomic; single STARK proof on CPU."
+                                                : "Private-Disposable (RFP-literal) - a fresh single-use public address is created per trade and never reused, with net-zero flow through it. On-chain: that ephemeral address + trade size, direction, pool. Private: your identity and links across trades. Atomic; same proof cost as Private." } }
 
                                     // Pre-confirmation summary (RFP Func #7):
                                     // estimated fee + min received; for private
                                     // modes the atomic / no-partial-deshield
                                     // guarantee (LEZ privacy txs carry no
-                                    // separate gas leg — design §5.2/§9).
+                                    // separate gas leg - design §5.2/§9).
                                     Rectangle{ Layout.fillWidth:true; radius:12
                                         color:root.panel; border.color:root.stroke
                                         Layout.preferredHeight:prec.implicitHeight+18
                                         ColumnLayout{ id:prec; anchors.fill:parent
                                             anchors.margins:9; spacing:2
-                                            // RFP Usability #8 — effective price line.
+                                            // RFP Usability #8 - effective price line.
                                             Text{ Layout.fillWidth:true; color:root.sub
                                                 font.pixelSize:10
                                                 text:"Effective price  "+root.effPrice()
@@ -1145,12 +1145,12 @@ Item {
                                             Text{ Layout.fillWidth:true; color:root.ink
                                                 font.pixelSize:11
                                                 text:"You receive ≥ "+root.minRecv()
-                                                    +"   ·   "+(root.quoteSub.length?root.quoteSub:"fee —") }
+                                                    +"   ·   "+(root.quoteSub.length?root.quoteSub:"fee -") }
                                             Text{ visible:privSel.mode===1 || privSel.mode===2
                                                 Layout.fillWidth:true
                                                 wrapMode:Text.WordWrap; color:root.sub
                                                 font.pixelSize:10
-                                                text:"Atomic: the deshield, swap and re-shield are one proof — it "
+                                                text:"Atomic: the deshield, swap and re-shield are one proof - it "
                                                     +"either all settles or nothing does (no partial deshield, "
                                                     +"funds can't be stranded). The shielded balance must cover "
                                                     +"the amount; the tx is rejected before submit otherwise. "
@@ -1160,7 +1160,7 @@ Item {
                                             // holds tokens in their deterministic `ATA(owner, def)`.
                                             Text{ visible:privSel.mode===0
                                                 Layout.fillWidth:true; wrapMode:Text.WordWrap
-                                                text:"Public swaps move tokens through your ATAs (RFP Func 8) — "
+                                                text:"Public swaps move tokens through your ATAs (RFP Func 8) - "
                                                     +"one deterministic holding per (owner, token)."
                                                 color:root.sub; font.pixelSize:10 } } }
 
@@ -1186,7 +1186,7 @@ Item {
                                                   && (parent.needCreate || root.pairHasPoolProp)
                                             onClicked:{
                                                 if (parent.needCreate){
-                                                    // Pool create lives on its own screen now — push it
+                                                    // Pool create lives on its own screen now - push it
                                                     // pre-filled with the current pair + fee.
                                                     nav.push(createPoolView, {
                                                         initFee: root.selFee,
@@ -1201,7 +1201,7 @@ Item {
                                                 var d = p.payIsA ? 0 : 1;        // direction in pool's a/b
                                                 var defIn = p.payIsA ? p.pa : p.pb;
                                                 if (privSel.mode===0) {
-                                                    // Public swap — ATA-only (RFP Func #8). Trader's two
+                                                    // Public swap - ATA-only (RFP Func #8). Trader's two
                                                     // ATAs derive from (owner, def) inside the FFI; both
                                                     // must already be funded for the input side.
                                                     if (!root.tokA.funded || !root.tokB.funded){
@@ -1209,14 +1209,14 @@ Item {
                                                             +"these tokens aren't pre-funded by bootstrap.",false);
                                                         return
                                                     }
-                                                    // Pack ids into one QString — the SDK QtProviderObject
+                                                    // Pack ids into one QString - the SDK QtProviderObject
                                                     // dispatch caps callModule arity at 5.
                                                     root.runAction("swapExactInAtaFor",
                                                         [p.pa+"|"+p.pb+"|"+defIn,
                                                          amtIn.text, root.minRecv(), root.selFee],
                                                         "ATA swap","Submitting via ATAs…");
                                                 } else {
-                                                    // Private modes — any pair where BOTH sides have
+                                                    // Private modes - any pair where BOTH sides have
                                                     // shielded balances (bootstrap creates LDEX_PRIV_<L>
                                                     // for the first FUND_LIMIT tokens). Dispatch via
                                                     // privateSwapFor with the pool's actual (pa, pb)
@@ -1247,7 +1247,7 @@ Item {
                                                         // Balance guard. NativeIn pays from the user's native LEZ
                                                         // gas account; NativeOut pays from the token's PRIV holding.
                                                         // Either way, we refuse before firing if the pay side can't
-                                                        // cover `amtIn` — otherwise an empty/unsynced pre-state hits
+                                                        // cover `amtIn` - otherwise an empty/unsynced pre-state hits
                                                         // amm_v2 and the guest panics ("chained-call pre-state must be
                                                         // an initialized Fungible token holding"). Catches both an
                                                         // empty PRIV account AND a wallet that just hasn't synced yet
@@ -1257,7 +1257,7 @@ Item {
                                                             var natN = parseFloat(root.nativeBal) || 0;
                                                             if (natN < needN) {
                                                                 root.setStatus(
-                                                                    "Insufficient native LEZ — you have "+natN
+                                                                    "Insufficient native LEZ - you have "+natN
                                                                     +", need "+needN+".",false);
                                                                 return
                                                             }
@@ -1265,7 +1265,7 @@ Item {
                                                             var privN = parseFloat(root.privBalanceForDef(tokSide.def)) || 0;
                                                             if (privN < needN) {
                                                                 root.setStatus(
-                                                                    "Insufficient shielded "+tokSide.sym+" — you have "+privN
+                                                                    "Insufficient shielded "+tokSide.sym+" - you have "+privN
                                                                     +", need "+needN
                                                                     +". Shield more via the Account tab, or Refresh if you "
                                                                     +"believe the balance is stale.",false);
@@ -1280,7 +1280,7 @@ Item {
                                                             payNative
                                                                 ? "Batched native-in private swap (LEZ→"+tokSide.sym+")"
                                                                 : "Batched native-out private swap ("+tokSide.sym+"→LEZ)",
-                                                            "Proving privately — this can take a few minutes.")
+                                                            "Proving privately - this can take a few minutes.")
                                                         return
                                                     }
                                                     if (!root.tokA.shielded || !root.tokB.shielded){
@@ -1303,7 +1303,7 @@ Item {
                                                     var payPriv = parseFloat(root.privBalanceForDef(root.tokA.def)) || 0;
                                                     if (payPriv < needP){
                                                         root.setStatus(
-                                                            "Insufficient shielded "+root.tokA.sym+" — you have "
+                                                            "Insufficient shielded "+root.tokA.sym+" - you have "
                                                             +payPriv+", need "+needP
                                                             +". Shield more via the Account tab, or Refresh if you "
                                                             +"believe the balance is stale.",false);
@@ -1313,12 +1313,12 @@ Item {
                                                     // plugin's wire direction matches the AMM's tokenA convention.
                                                     var pPa = p.payIsA ? root.tokA.priv : root.tokB.priv;
                                                     var pPb = p.payIsA ? root.tokB.priv : root.tokA.priv;
-                                                    // 6-field pipe-delimited config — SDK caps callModule arity at 5.
+                                                    // 6-field pipe-delimited config - SDK caps callModule arity at 5.
                                                     var cfg = privSel.mode+"|"+d+"|"+p.pa+"|"+p.pb+"|"+pPa+"|"+pPb;
                                                     root.runAction("privateSwapFor",
                                                         [cfg, amtIn.text, root.minRecv(), root.selFee],
                                                         privSel.mode===1?"Private swap":"Private-Disposable swap",
-                                                        "Proving privately — this can take a few minutes.")
+                                                        "Proving privately - this can take a few minutes.")
                                                 }
                                             } }
                                         Text{ anchors.centerIn:parent
@@ -1356,7 +1356,7 @@ Item {
                                     Text{ id:newPoolLbl; anchors.centerIn:parent
                                         text:"+ New pool"; color:"white"
                                         font.pixelSize:13; font.weight:Font.DemiBold } } }
-                            // Search bar — filter by token symbol or definition id.
+                            // Search bar - filter by token symbol or definition id.
                             RowLayout{ Layout.fillWidth:true; Layout.leftMargin:22; Layout.rightMargin:22; spacing:6
                                 TextField{ id:poolSearch; Layout.fillWidth:true
                                     placeholderText:"Search by token symbol or definition id…"
@@ -1423,7 +1423,7 @@ Item {
                     // ===== ACCOUNT =====
                     // Analytics moved out of a global tab into each pool's
                     // detail view (Pools → row → "open"). See poolView
-                    // Component for per-pool TVL / volume / fee revenue —
+                    // Component for per-pool TVL / volume / fee revenue -
                     // EXACT on-chain values read from each pool's
                     // PoolDefinition.
                     ScrollView{ contentWidth:availableWidth
@@ -1448,7 +1448,7 @@ Item {
                                             Rectangle{ width:20;height:20;radius:10; color: modelData.color }
                                             Text{ text:modelData.name; color:root.ink; font.pixelSize:14
                                                   Layout.preferredWidth:90 }
-                                            // Selectable def_id — first 12 chars of the canonical id.
+                                            // Selectable def_id - first 12 chars of the canonical id.
                                             TextEdit{ text:modelData.definition.substring(0, 18)
                                                 color:root.sub; font.pixelSize:10
                                                 readOnly:true; selectByMouse:true
@@ -1467,7 +1467,7 @@ Item {
                             // (`LDEX_WLEZ_DEF` present in env). LEZ shows in
                             // the catalog as a single token but is internally
                             // split between native (the user's gas account)
-                            // and wrapped (WLEZ token holding) — this card
+                            // and wrapped (WLEZ token holding) - this card
                             // moves balance between the two so the user can
                             // trade LEZ in the AMM.
                             Rectangle{ visible: !!root.env.LDEX_WLEZ_DEF
@@ -1518,7 +1518,7 @@ Item {
                                                 verticalAlignment:Text.AlignVCenter }
                                             onClicked: root.runAction("unwrapNative", [unwrapAmt.text],
                                                 "Unwrap WLEZ", "Burning WLEZ from HOLD_W and releasing native LEZ…") } }
-                                    // Second row — "move ATA → HOLD_W" so users can
+                                    // Second row - "move ATA → HOLD_W" so users can
                                     // unwrap WLEZ that accumulated in the ATA via
                                     // swaps. WLEZ::Unwrap requires the holding to be
                                     // owner-signed; ATAs are PDA-owned, so a hop
@@ -1567,7 +1567,7 @@ Item {
                                 ColumnLayout{ id:pcol; anchors.fill:parent; anchors.margins:16; spacing:8
                                     Text{ text:"Shield / Deshield tokens"; color:root.ink
                                           font.pixelSize:15; font.weight:Font.Bold }
-                                    Text{ text:"Shield moves tokens from your keypair holding (HOLD_<L>) into a PrivateOwned account visible only to you. Deshield reverses it, into HOLD_<L>. One STARK-proven transfer per click — tens of seconds under real proofs. (ATAs are PDA-owned, so the token program won't accept them as a signed sender; HOLD has the keypair, ATA doesn't. Your displayed pub balance sums HOLD+ATA, so the total moves as expected.)"
+                                    Text{ text:"Shield moves tokens from your keypair holding (HOLD_<L>) into a PrivateOwned account visible only to you. Deshield reverses it, into HOLD_<L>. One STARK-proven transfer per click - tens of seconds under real proofs. (ATAs are PDA-owned, so the token program won't accept them as a signed sender; HOLD has the keypair, ATA doesn't. Your displayed pub balance sums HOLD+ATA, so the total moves as expected.)"
                                           color:root.sub; font.pixelSize:11; wrapMode:Text.WordWrap
                                           Layout.fillWidth:true }
                                     RowLayout{ Layout.fillWidth:true; spacing:8
@@ -1634,7 +1634,7 @@ Item {
                                         delegate:TextEdit{ Layout.fillWidth:true; wrapMode:TextEdit.WrapAnywhere; font.pixelSize:11
                                             readOnly:true; selectByMouse:true
                                             color:modelData.ok?root.okCol:root.errCol
-                                            text:modelData.time+"  "+modelData.action+"  —  "+modelData.result } } } }
+                                            text:modelData.time+"  "+modelData.action+"  -  "+modelData.result } } } }
                         }
                     }
                 }
@@ -1654,7 +1654,7 @@ Item {
         Item {
             id: poolRoot
             property int pfee:30
-            // Pair the view was opened for — defaults to env A/B if not
+            // Pair the view was opened for - defaults to env A/B if not
             // overridden by the caller (kept for backwards-compat with the
             // old single-pair list).
             property string pDefA: root.defA()
@@ -1662,7 +1662,7 @@ Item {
             property string pSymA: "TOKENA"
             property string pSymB: "TOKENB"
             // Whether the bootstrap LP holding (LDEX_USER_HOLDING_LP) is
-            // for this exact pool — only the env A/B pair has one on
+            // for this exact pool - only the env A/B pair has one on
             // dev. For other pools we hide the Add/Remove form until we
             // wire per-pool LP-holding tracking (RFP Func #2 follow-up).
             readonly property bool isEnvPair: (pDefA===root.defA() && pDefB===root.defB())
@@ -1697,17 +1697,17 @@ Item {
 
                 RowLayout{ Layout.fillWidth:true; Layout.leftMargin:22; Layout.rightMargin:22; spacing:12
                     Repeater{ model:[
-                        {k:"Reserve "+pSymA, v: pinfo.reserve_a||"—"},
-                        {k:"Reserve "+pSymB, v: pinfo.reserve_b||"—"},
-                        {k:"Price "+pSymB+"/"+pSymA, v: pinfo.exists?((parseFloat(pinfo.reserve_b)||0)/(parseFloat(pinfo.reserve_a)||1)).toFixed(4):"—"},
-                        {k:"LP supply", v: pinfo.lp_supply||"—"} ]
+                        {k:"Reserve "+pSymA, v: pinfo.reserve_a||"-"},
+                        {k:"Reserve "+pSymB, v: pinfo.reserve_b||"-"},
+                        {k:"Price "+pSymB+"/"+pSymA, v: pinfo.exists?((parseFloat(pinfo.reserve_b)||0)/(parseFloat(pinfo.reserve_a)||1)).toFixed(4):"-"},
+                        {k:"LP supply", v: pinfo.lp_supply||"-"} ]
                         delegate:Rectangle{ Layout.fillWidth:true; Layout.preferredHeight:72
                             radius:16; color:root.card; border.color:root.stroke
                             ColumnLayout{ anchors.centerIn:parent; spacing:3
                                 Text{ text:modelData.k; color:root.sub; font.pixelSize:11; Layout.alignment:Qt.AlignHCenter }
                                 Text{ text:modelData.v; color:root.ink; font.pixelSize:16; font.weight:Font.Bold; Layout.alignment:Qt.AlignHCenter } } } } }
 
-                // Per-pool analytics — EXACT on-chain values from this
+                // Per-pool analytics - EXACT on-chain values from this
                 // pool's PoolDefinition (reserves + cumulative volume +
                 // LP-fee accumulators maintained by amm_v2's swap_logic).
                 // Aggregate-per-pool only; no individual LP/trader positions.
@@ -1726,17 +1726,17 @@ Item {
                                 {k:"TVL",
                                  v: pinfo.exists
                                     ? (parseFloat(pinfo.reserve_a)||0).toFixed(0)+" "+pSymA+" + "+(parseFloat(pinfo.reserve_b)||0).toFixed(0)+" "+pSymB
-                                    : "—"},
+                                    : "-"},
                                 {k:"LP supply",
-                                 v: pinfo.lp_supply||"—"},
+                                 v: pinfo.lp_supply||"-"},
                                 {k:"Cumulative volume",
                                  v: pinfo.exists
                                     ? (parseFloat(pinfo.cum_volume_a)||0).toFixed(0)+" "+pSymA+" / "+(parseFloat(pinfo.cum_volume_b)||0).toFixed(0)+" "+pSymB
-                                    : "—"},
+                                    : "-"},
                                 {k:"LP fee revenue",
                                  v: pinfo.exists
                                     ? (parseFloat(pinfo.cum_fees_a)||0).toFixed(4)+" "+pSymA+" / "+(parseFloat(pinfo.cum_fees_b)||0).toFixed(4)+" "+pSymB
-                                    : "—"}]
+                                    : "-"}]
                                 delegate:Rectangle{ Layout.fillWidth:true; Layout.preferredHeight:68
                                     radius:14; color:root.panel; border.color:root.stroke
                                     ColumnLayout{ anchors.fill:parent; anchors.margins:12; spacing:3
@@ -1747,12 +1747,12 @@ Item {
                         Text{ Layout.fillWidth:true; wrapMode:Text.WordWrap
                               color:root.sub; font.pixelSize:10
                               text:"EXACT on-chain values read from this pool's PoolDefinition. "+
-                                   "Aggregate only — no individual LP or trader positions." } } }
+                                   "Aggregate only - no individual LP or trader positions." } } }
 
                 Rectangle{ Layout.fillWidth:true; Layout.leftMargin:22; Layout.rightMargin:22
                     Layout.preferredHeight:220; radius:18; color:root.card; border.color:root.stroke
                     ColumnLayout{ anchors.fill:parent; anchors.margins:14; spacing:4
-                        Text{ text:"Price — on-chain history (B per A)"; color:root.sub; font.pixelSize:12 }
+                        Text{ text:"Price - on-chain history (B per A)"; color:root.sub; font.pixelSize:12 }
                         Canvas{ id:chart; Layout.fillWidth:true; Layout.fillHeight:true
                             onPaint:{ var ctx=getContext("2d"); ctx.reset();
                                 ctx.fillStyle=root.card; ctx.fillRect(0,0,width,height);
@@ -1817,7 +1817,7 @@ Item {
                                 onClicked:root.runAction("privateAddLiquidity",
                                     [lpPriv.on?1:0,pMinLp.text,pMaxA.text,pMaxB.text,pfee],
                                     lpPriv.on?"Adding liquidity (private)":"Adding liquidity",
-                                    lpPriv.on?"Proving privately — this can take a few minutes.":"Submitting…") }
+                                    lpPriv.on?"Proving privately - this can take a few minutes.":"Submitting…") }
                             Item{ Layout.fillWidth:true }
                             ColumnLayout{ spacing:2
                                 Text{ text:"Burn LP"; color:root.sub; font.pixelSize:10 }
@@ -1838,10 +1838,10 @@ Item {
                                 onClicked:root.runAction("privateRemoveLiquidity",
                                     [lpPriv.on?1:0,pLp.text,"1","1",pfee],
                                     lpPriv.on?"Removing liquidity (private)":"Removing liquidity",
-                                    lpPriv.on?"Proving privately — this can take a few minutes.":"Submitting…") } }
+                                    lpPriv.on?"Proving privately - this can take a few minutes.":"Submitting…") } }
                         Text{ visible:!poolRoot.isEnvPair; Layout.fillWidth:true; wrapMode:Text.WordWrap
                             color:root.sub; font.pixelSize:11
-                            text:"Add/Remove liquidity for non-bootstrap pools needs a per-pool LP holding — wiring that comes in the next iteration." }
+                            text:"Add/Remove liquidity for non-bootstrap pools needs a per-pool LP holding - wiring that comes in the next iteration." }
                         Text{ Layout.fillWidth:true; wrapMode:Text.WordWrap; color:root.sub; font.pixelSize:10
                             text:"Chart = persisted on-chain price history (§5.11 price-indexer)." } }
                 }
@@ -1852,7 +1852,7 @@ Item {
     // ===== Create-Pool screen =====
     // Dedicated screen with two token pickers, seed amounts, fee tier,
     // and a live price preview computed from the entered amounts (the
-    // pool opens at exactly amountB / amountA — there's no on-chain
+    // pool opens at exactly amountB / amountA - there's no on-chain
     // price yet because the pool doesn't exist).
     Component {
         id: createPoolView
@@ -1875,12 +1875,12 @@ Item {
                                             cpRoot.cpB = root.tokenBySym(cpRoot.cpSymB) } }
             function priceBA(){
                 var a = parseFloat(cpAmtA.text), b = parseFloat(cpAmtB.text);
-                if (isNaN(a)||isNaN(b)||a<=0||b<=0) return "—";
+                if (isNaN(a)||isNaN(b)||a<=0||b<=0) return "-";
                 return (b/a).toFixed(6);
             }
             function priceAB(){
                 var a = parseFloat(cpAmtA.text), b = parseFloat(cpAmtB.text);
-                if (isNaN(a)||isNaN(b)||a<=0||b<=0) return "—";
+                if (isNaN(a)||isNaN(b)||a<=0||b<=0) return "-";
                 return (a/b).toFixed(6);
             }
 

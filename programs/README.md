@@ -1,18 +1,18 @@
 # lez-programs
 
-Essential programs for the **Logos Execution Zone (LEZ)** — a zkVM-based execution environment built on [RISC Zero](https://risczero.com/). Programs run inside the RISC Zero zkVM (`riscv32im-risc0-zkvm-elf` target) and interact with the LEZ runtime via the `nssa_core` library.
+Essential programs for the **Logos Execution Zone (LEZ)** - a zkVM-based execution environment built on [RISC Zero](https://risczero.com/). Programs run inside the RISC Zero zkVM (`riscv32im-risc0-zkvm-elf` target) and interact with the LEZ runtime via the `nssa_core` library.
 
 ## Prerequisites
 
-- **Rust** — install via [rustup](https://rustup.rs/). The pinned toolchain version is `1.91.1` (set in `rust-toolchain.toml`).
-- **RISC Zero toolchain** — required to build guest ZK binaries:
+- **Rust** - install via [rustup](https://rustup.rs/). The pinned toolchain version is `1.91.1` (set in `rust-toolchain.toml`).
+- **RISC Zero toolchain** - required to build guest ZK binaries:
 
   ```bash
   cargo install cargo-risczero
   cargo risczero install
   ```
-- **SPEL toolchain** — provides `spel` and `wallet` CLI tools. Install from [logos-co/spel](https://github.com/logos-co/spel).
-- **LEZ** — provides `wallet` CLI. Install from [logos-blockchain/logos-execution-zone](https://github.com/logos-blockchain/logos-execution-zone)
+- **SPEL toolchain** - provides `spel` and `wallet` CLI tools. Install from [logos-co/spel](https://github.com/logos-co/spel).
+- **LEZ** - provides `wallet` CLI. Install from [logos-blockchain/logos-execution-zone](https://github.com/logos-blockchain/logos-execution-zone)
 
 ## Build & Test
 
@@ -76,7 +76,7 @@ spel inspect <path-to-binary>
 
 The IDL describes the program's instructions and can be used to interact with a deployed program.
 
-**Using the `idl-gen` crate** (no external toolchain required — this is what CI uses):
+**Using the `idl-gen` crate** (no external toolchain required - this is what CI uses):
 
 ```bash
 cargo run -p idl-gen -- token/methods/guest/src/bin/token.rs > artifacts/token-idl.json

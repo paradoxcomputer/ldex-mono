@@ -39,7 +39,7 @@ sleep 18
 echo ">> [step 3] sanity: public swap (mode 0) on EXISTING AMM"
 "$E2E" pubswap "$LDEX_WALLET_CONFIG" "$LDEX_WALLET_STORAGE" \
     "$LDEX_AMM_PROGRAM_ID" "$LDEX_HOLD_A" "$LDEX_HOLD_B" "$LDEX_DEF_A" \
-    10 1 30 || echo "   (mode-0 swap on existing AMM — needs an existing AMM pool; create one with: e2e_testnet pool $LDEX_AMM_PROGRAM_ID $LDEX_HOLD_A $LDEX_HOLD_B $LDEX_USER_HOLDING_LP 100000 30)"
+    10 1 30 || echo "   (mode-0 swap on existing AMM - needs an existing AMM pool; create one with: e2e_testnet pool $LDEX_AMM_PROGRAM_ID $LDEX_HOLD_A $LDEX_HOLD_B $LDEX_USER_HOLDING_LP 100000 30)"
 sleep 18
 
 echo ">> [step 4] allocate + init fresh A holdings for mode-2 disposable"

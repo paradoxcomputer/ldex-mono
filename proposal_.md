@@ -32,7 +32,7 @@ Status: Part-time
 
 RFP-004 asks for a privacy-preserving DEX on the Logos Execution Zone. LDEX delivers it: a constant-product AMM with a 4-tier fee schedule (0.01 / 0.05 / 0.30 / 1.00 %), atomic deshield → swap → re-shield proven inside a single RISC-Zero STARK, ATA-based public flows, on-chain analytics, and three per-trade privacy modes (Public, PrivateOwned, Disposable account-A) so users choose their own latency/linkability trade-off, including the literal RFP "fresh account per op" model. The already existing codebase is close to feature-complete on a self-hosted L1-backed devnet today, mainly through cli; functional, usability, reliability, performance and privacy requirements in `docs/request.md` were live-verified and mapped in `docs/request_met.md`.
 
-Although functionality is well advanced, it is not the bar. A swap that takes 12–25 minutes is not a DEX users will trust, it's a demo. LDEX's privacy modes are CPU-bound on a real STARK; on commodity hardware (Ryzen 7 PRO 7840U) mode-1 swaps take 12 m 29 s and mode-2 disposable swaps 23 m 38 s. That gap between "functional" and "usable" is exactly the gap that **Psychopomp** closes. Psychopomp is a TEE-attested GPU prover marketplace, native to LEZ, that lets a user outsource STARK generation without exposing the unsealed witness. Phase-0 + Phase-1 are already shipped (operator registration, escrow, settlement, fault path can be tested on a dedicated sequencer with full chained-call mechanics); what's missing is the LDEX consumer side: the mini-app/CLI wiring that picks a Psychopomp operator per swap, posts the witness over the encrypted bridge, and consumes the returned STARK. With that wiring, the same mode-2 swap drops from ~24 min CPU to ~1–2 min on a GPU/TEE prover, with no protocol change on the LEZ side, as the chain still verifies a normal `PRIVACY_PRESERVING_CIRCUIT_ID` STARK.
+Although functionality is well advanced, it is not the bar. A swap that takes 12-25 minutes is not a DEX users will trust, it's a demo. LDEX's privacy modes are CPU-bound on a real STARK; on commodity hardware (Ryzen 7 PRO 7840U) mode-1 swaps take 12 m 29 s and mode-2 disposable swaps 23 m 38 s. That gap between "functional" and "usable" is exactly the gap that **Psychopomp** closes. Psychopomp is a TEE-attested GPU prover marketplace, native to LEZ, that lets a user outsource STARK generation without exposing the unsealed witness. Phase-0 + Phase-1 are already shipped (operator registration, escrow, settlement, fault path can be tested on a dedicated sequencer with full chained-call mechanics); what's missing is the LDEX consumer side: the mini-app/CLI wiring that picks a Psychopomp operator per swap, posts the witness over the encrypted bridge, and consumes the returned STARK. With that wiring, the same mode-2 swap drops from ~24 min CPU to ~1-2 min on a GPU/TEE prover, with no protocol change on the LEZ side, as the chain still verifies a normal `PRIVACY_PRESERVING_CIRCUIT_ID` STARK.
 
 This proposal packages the two halves as one deliverable because they are one deliverable. LDEX without a fast prover is a benchmark; a fast
 prover without an application is infrastructure looking for users. The combination is a solid end-user-shaped privacy product on LEZ, with the prover layer already engineered for future privacy apps too. The work is mostly hardening and integration: land LDEX on the canonical Logos testnet, harden and enhance LDEX-core, wire the mini-app/CLI, integrate Psychopomp's operator marketplace, build the test framework that protects the UX over time (we used it during this proposal's drafting to find and fix a real shielded-balance display bug), and pay for an audit before mainnet.
@@ -79,13 +79,13 @@ Two parallel tracks, joined at one integration point (Milestone 3).
 
 - Operator registry: on-chain `Register → OperatorState` with a reputation/stake record per operator.
 
-- Escrow — user posts a STARK request with bond + payment; operator   accepts with their own bond; payment unlocks on settlement.
+- Escrow - user posts a STARK request with bond + payment; operator   accepts with their own bond; payment unlocks on settlement.
 
-- Settlement — `Post → Accept → Settle` chained calls that increment   `OperatorState.rep.successes` and refund the user's bond on success.
+- Settlement - `Post → Accept → Settle` chained calls that increment   `OperatorState.rep.successes` and refund the user's bond on success.
 
-- Fault path — liveness-fault timer; if the operator doesn't settle by   deadline, `Fault::Liveness` chains to refund + `rep.liveness_faults++`.
+- Fault path - liveness-fault timer; if the operator doesn't settle by   deadline, `Fault::Liveness` chains to refund + `rep.liveness_faults++`.
 
-- TEE attestation — operators run in confidential compute (SEV-SNP / TDX / SGX) and attach a quoted attestation to each receipt. The on-
+- TEE attestation - operators run in confidential compute (SEV-SNP / TDX / SGX) and attach a quoted attestation to each receipt. The on-
   chain artifact is the standard RISC-Zero STARK. Verifiable by any LEZ node with no trust in the operator. The off-chain confidentiality
   (the unsealed witness never leaves the TEE) is what attestation buys; the chain-side verifiability is unchanged.
 
@@ -100,7 +100,7 @@ Two parallel tracks, joined at one integration point (Milestone 3).
 
 LDEX side: a single env-var switch in the mini-app/CLI configuration (`LDEX_PROVER=local|psychopomp) selects the backend per swap. The Psychopomp path is the substantive work: a small client library that picks an operator from the on-chain registry by latency + price + reputation, posts the witness via the encrypted operator-channel, and returns the receipt to the mini-app's FFI. The chain-side artifact is unchanged (a standard PRIVACY_PRESERVING_CIRCUIT_ID receipt).
 
-Latency target after M3: mode-1 swap from 12 m 29 s → ~1 min, mode-2 disposable from 23 m 38 s → ~1–2 min on the operator's GPU. The
+Latency target after M3: mode-1 swap from 12 m 29 s → ~1 min, mode-2 disposable from 23 m 38 s → ~1-2 min on the operator's GPU. The
 acceptance criterion is concrete and measured.
 
 ## Anticipated Challenges and Solutions
@@ -112,7 +112,7 @@ acceptance criterion is concrete and measured.
    tracked in M2 alongside the test framework that catches the class of bug.
 
 2. CPU STARK latency. Mode-1 / mode-2 swaps are CPU-bound on the real STARK; users won't wait 20+ minutes for a swap. Mitigation: M3
-   (Psychopomp wiring) drops this to ~1–2 min and is work this proposal funds.
+   (Psychopomp wiring) drops this to ~1-2 min and is work this proposal funds.
 
 3. Psychopomp operator economics. The marketplace's fee + bond curve matters: too cheap and operators don't bother; too expensive and users won't switch from local proving. The on-chain registry + escrow are already in place; M3 calibrates the default fee + writes a runbook for operators who want to join.
 

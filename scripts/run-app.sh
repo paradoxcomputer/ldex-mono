@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/run-app.sh — one-shot launcher for the LDEX mini-app.
+# scripts/run-app.sh - one-shot launcher for the LDEX mini-app.
 #
 #   ./scripts/run-app.sh
 #
@@ -21,7 +21,7 @@ fi
 
 # 2. bootstrap.env present?
 if [[ ! -f scripts/bootstrap.env ]]; then
-  echo "scripts/bootstrap.env missing — running scripts/bootstrap.sh first…" >&2
+  echo "scripts/bootstrap.env missing - running scripts/bootstrap.sh first…" >&2
   ./scripts/bootstrap.sh
 fi
 # shellcheck disable=SC1091

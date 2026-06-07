@@ -192,7 +192,7 @@ fn ata_create_is_idempotent() {
     let tx = PublicTransaction::new(message, witness_set);
     state.transition_from_public_transaction(&tx, 0, 0).unwrap();
 
-    // Already initialized — should remain unchanged
+    // Already initialized - should remain unchanged
     assert_eq!(
         state.get_account_by_id(Ids::owner_ata()),
         Account {

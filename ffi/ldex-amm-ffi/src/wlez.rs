@@ -1,11 +1,11 @@
 //! C-ABI shim for the Wrapped LEZ (WLEZ) program. Mirrors the structure
 //! of `submit.rs` for the AMM. Four entry points:
 //!
-//!   - `ldex_wlez_definition_id` — pure derivation (no chain call).
-//!   - `ldex_wlez_vault_id`      — pure derivation (no chain call).
-//!   - `ldex_wlez_initialize`    — submits `wlez::Initialize` (one-shot at deploy time).
-//!   - `ldex_wlez_wrap`          — submits `wlez::Wrap{amount}` (user signs).
-//!   - `ldex_wlez_unwrap`        — submits `wlez::Unwrap{amount}` (user signs).
+//!   - `ldex_wlez_definition_id` - pure derivation (no chain call).
+//!   - `ldex_wlez_vault_id`      - pure derivation (no chain call).
+//!   - `ldex_wlez_initialize`    - submits `wlez::Initialize` (one-shot at deploy time).
+//!   - `ldex_wlez_wrap`          - submits `wlez::Wrap{amount}` (user signs).
+//!   - `ldex_wlez_unwrap`        - submits `wlez::Unwrap{amount}` (user signs).
 //!
 //! All ids are 32-byte raw bytes. Return codes match the LDEX_AMM_* enum
 //! in lib.rs so the mini-app's `rcMessage` helper produces consistent UI
@@ -59,7 +59,7 @@ unsafe fn out32(result: Result<[u8; 32], i32>, out: *mut u8) -> i32 {
 // ── Pure PDA derivations ────────────────────────────────────────────
 
 /// Deterministic WLEZ token-definition id for a deployed WLEZ program.
-/// Pure — no chain call. Used by bootstrap and the mini-app to know
+/// Pure - no chain call. Used by bootstrap and the mini-app to know
 /// where to expect the WLEZ definition account.
 ///
 /// # Safety
@@ -78,7 +78,7 @@ pub unsafe extern "C" fn ldex_wlez_definition_id(
 }
 
 /// Deterministic WLEZ vault account id for a deployed WLEZ program.
-/// Pure — no chain call.
+/// Pure - no chain call.
 ///
 /// # Safety
 /// `wlez_program_id` and `out` must be non-null and point to 32 bytes.
@@ -98,7 +98,7 @@ pub unsafe extern "C" fn ldex_wlez_vault_id(
 
 /// Submit a `wlez::Initialize` instruction. One-shot per deployment;
 /// the instruction itself is idempotent so re-running this call is safe.
-/// `payer_holding` is any account the wallet has the signing key for —
+/// `payer_holding` is any account the wallet has the signing key for -
 /// the framework requires at least one signer for fee payment, and
 /// Initialize itself doesn't read it. Pass any keypair-derived account
 /// (e.g. the wallet's owner account).

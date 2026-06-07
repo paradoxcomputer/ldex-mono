@@ -2,7 +2,7 @@
 
 Thanks for taking a look. Psychopomp is the TEE-attested outsourced RISC Zero
 proving marketplace for the Logos Execution Zone. Most contributions land in
-one of three places — see [the README](README.md) for the architecture, and
+one of three places - see [the README](README.md) for the architecture, and
 [BUILD.md](BUILD.md) for the full runbook.
 
 ## Repo layout
@@ -13,7 +13,7 @@ one of three places — see [the README](README.md) for the architecture, and
 | `crates/psychopomp-attest` | `Attestor`/`Verifier_` traits + Phase-0 `StubAttestor` |
 | `crates/psychopomp-client` | Wallet-side SDK (`prove`, `prove_multi`, `ensure_elf_cached`, discovery, reputation) |
 | `crates/psychopomp-prover` | Operator daemon: axum HTTP + RISC0 (CUDA via `--features gpu`) |
-| `crates/psychopomp-e2e` | End-to-end harness — drives the e2e modes documented in BUILD.md |
+| `crates/psychopomp-e2e` | End-to-end harness - drives the e2e modes documented in BUILD.md |
 | `crates/psychopomp-chain` | LEZ on-chain client: tx builders + state readers + `live-*` examples |
 | `crates/psychopomp-hwclass` | Shared `HwClass` enum (Stub / H100CC / MI300SEV / TDX) |
 | `guests/{hello,composed,heavy}` | RISC0 guests used by the e2e harness |
@@ -33,7 +33,7 @@ RISC0_DEV_MODE=1 ./scripts/e2e-all.sh            # 3 provers, 11 protocol modes,
 
 ## Running the tests
 
-The Phase-0 stack and the Phase-1 state-machines are pure Rust — they unit-test
+The Phase-0 stack and the Phase-1 state-machines are pure Rust - they unit-test
 with no toolchain beyond stable + the RISC Zero target. The LEZ guests under
 `Phase1-onchain/*/methods/guest/` require `docker buildx` to compile (they go
 through `cargo risczero build`). The bootstrap script skips them; CI should
@@ -47,7 +47,7 @@ cargo test --no-fail-fast \
     -p psychopomp-registry-program -p psychopomp-escrow-program
 ```
 
-For the LEZ guests (Phase-1 on-chain — requires docker + a Logos Execution Zone
+For the LEZ guests (Phase-1 on-chain - requires docker + a Logos Execution Zone
 checkout):
 
 ```bash
@@ -58,10 +58,10 @@ checkout):
 
 Mirror `guests/heavy/` + `guests/heavy-methods/`. Two crates:
 
-1. **`guests/<name>/`** — the actual RISC0 guest. Its own workspace
+1. **`guests/<name>/`** - the actual RISC0 guest. Its own workspace
    (`[workspace]` marker), one bin in `src/bin/<name>.rs`. Add to
    `Cargo.toml` workspace `exclude`.
-2. **`guests/<name>-methods/`** — a host-side crate whose `build.rs` calls
+2. **`guests/<name>-methods/`** - a host-side crate whose `build.rs` calls
    `risc0_build::embed_methods()`. Add to workspace `members` and
    `workspace.dependencies` as `<name>-methods = { path = "guests/<name>-methods" }`.
 
@@ -74,7 +74,7 @@ Then expose it through the e2e harness in `crates/psychopomp-e2e/src/main.rs`.
   trips on a known risc0-build + clippy interaction in the guest-methods
   crates; clippy without `--all-targets` is clean)
 - No emojis in code or docs unless the user asked for them.
-- Keep comments lean — the existing crates favour terse, motivation-only
+- Keep comments lean - the existing crates favour terse, motivation-only
   comments over what-the-code-does narration.
 
 ## Security

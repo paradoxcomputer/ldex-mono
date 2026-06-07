@@ -1,7 +1,7 @@
 //! Per-client token-bucket rate limiter.
 //!
 //! Keyed by the client's X25519 pubkey (which is bound to the AEAD they
-//! encrypted the witness under — operators see it on every job submission).
+//! encrypted the witness under - operators see it on every job submission).
 //! For the precommit/reveal flow we key on the same pubkey from
 //! `JobPrecommit::client_x25519_pub`. The cap is policy-configurable.
 

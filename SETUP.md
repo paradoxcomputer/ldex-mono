@@ -1,18 +1,18 @@
-# LDEX — fresh-clone setup
+# LDEX - fresh-clone setup
 
 How to take a clean clone of this repo and reach a working dev chain +
 CLI + mini-app. Tested on Ubuntu 22.04 / 24.04 / Nix-on-Linux.
 
 ## 0. Prerequisites
 
-- **Rust toolchain** — install via [rustup](https://rustup.rs).
+- **Rust toolchain** - install via [rustup](https://rustup.rs).
   The repo pins `rustc 1.94` (host can be newer).
-- **Nix with flakes** — install [Determinate Nix](https://determinate.systems/nix-installer/)
+- **Nix with flakes** - install [Determinate Nix](https://determinate.systems/nix-installer/)
   (or upstream Nix with `experimental-features = nix-command flakes`).
-- **RISC Zero** — `cargo install cargo-binstall && cargo binstall cargo-risczero` then
+- **RISC Zero** - `cargo install cargo-binstall && cargo binstall cargo-risczero` then
   `cargo risczero install` (gets the `r0vm` runtime).
-- **Docker BuildKit** — required by `cargo risczero build`. `sudo apt install docker-buildx`.
-- **`logos-blockchain-circuits`** — RISC Zero circuit blobs. Clone to a
+- **Docker BuildKit** - required by `cargo risczero build`. `sudo apt install docker-buildx`.
+- **`logos-blockchain-circuits`** - RISC Zero circuit blobs. Clone to a
   known dir, then `export LOGOS_BLOCKCHAIN_CIRCUITS=$HOME/.logos-blockchain-circuits`.
 
 ## 1. Get the LEZ source tree
@@ -67,9 +67,9 @@ private accounts (real STARK proofs, ~5 min × 8 ≈ 40 min on CPU), and
 emits `scripts/bootstrap.env` with all the ids the CLI + mini-app need.
 
 Override knobs:
-- `LDEX_LEZ_DIR=/path/to/lez` — LEZ clone (default `~/ldex-spike/lez`)
-- `LDEX_WALLET_HOME=/path/to/wallet-dir` — wallet state (default `/tmp/ldex-bootstrap/wallet`)
-- `LDEX_SEQUENCER_ADDR=http://...` — target sequencer (default `:3040`)
+- `LDEX_LEZ_DIR=/path/to/lez` - LEZ clone (default `~/ldex-spike/lez`)
+- `LDEX_WALLET_HOME=/path/to/wallet-dir` - wallet state (default `/tmp/ldex-bootstrap/wallet`)
+- `LDEX_SEQUENCER_ADDR=http://...` - target sequencer (default `:3040`)
 
 ## 5. Install the CLI
 
@@ -108,7 +108,7 @@ First run builds + populates the Nix store; subsequent runs are instant.
 
 ## 7. (Optional) Run the test framework
 
-Layer A — plugin/FFI integration tests:
+Layer A - plugin/FFI integration tests:
 
 ```bash
 bash mini-app/tests/layer-a/run.sh           # ~10 s read-only
@@ -117,7 +117,7 @@ LAYER_A_MUTATE=1 bash mini-app/tests/layer-a/run.sh   # adds wrap round-trip
 
 Layers B and C are in progress.
 
-## Environment variables — full list
+## Environment variables - full list
 
 | Variable | Default | What |
 |---|---|---|
@@ -135,11 +135,11 @@ Layers B and C are in progress.
 
 ## Troubleshooting
 
-- **`LEZ wallet binary not found`** — set `LDEX_WALLET_BIN` or
+- **`LEZ wallet binary not found`** - set `LDEX_WALLET_BIN` or
   `LDEX_LEZ_DIR`, or clone+build LEZ at `~/ldex-spike/lez`.
-- **`NAR hash mismatch` from `nix run`** — `cd mini-app/ui && nix flake update ldex_core`.
-- **Bootstrap funding step fails** — see [README troubleshooting] section
-  (the sequencer config field names changed in upstream LEZ — modern
+- **`NAR hash mismatch` from `nix run`** - `cd mini-app/ui && nix flake update ldex_core`.
+- **Bootstrap funding step fails** - see [README troubleshooting] section
+  (the sequencer config field names changed in upstream LEZ - modern
   LEZ uses `initial_public_accounts` not `initial_accounts`).
-- **Mini-app shows 0 for shielded balances** — fixed in this repo
+- **Mini-app shows 0 for shielded balances** - fixed in this repo
   (commit-hash TBD); rebuild `mini-app/core` if balances still read 0.

@@ -1,4 +1,4 @@
-//! WLEZ::Initialize — one-shot setup at program-deployment time.
+//! WLEZ::Initialize - one-shot setup at program-deployment time.
 //!
 //! Claims the WLEZ vault PDA (so we own the escrow account) and creates
 //! the WLEZ token definition via a chained `token::NewFungibleDefinition`
@@ -46,7 +46,7 @@ pub fn initialize(
 
     let token_program_id = reference_token_def.account.program_owner;
 
-    // 2. Idempotency — if the vault is already claimed by this program
+    // 2. Idempotency - if the vault is already claimed by this program
     //    AND the definition is already token-program-owned, this call is
     //    a no-op. Lets bootstrap re-run safely.
     if vault.account.program_owner == wlez_program_id
@@ -64,7 +64,7 @@ pub fn initialize(
         );
     }
 
-    // 3. Fresh-init path — all three must currently be default.
+    // 3. Fresh-init path - all three must currently be default.
     assert_eq!(
         vault.account,
         Account::default(),
@@ -83,7 +83,7 @@ pub fn initialize(
 
     // 4. Vault: claim at the WLEZ vault PDA via Claim::Pda(seed). The
     //    framework's validate_execution requires the post-state's
-    //    program_owner to *stay* at DEFAULT_PROGRAM_ID — the framework
+    //    program_owner to *stay* at DEFAULT_PROGRAM_ID - the framework
     //    rewrites it to wlez_program_id after the claim check passes
     //    (see lez/nssa/src/validated_state_diff.rs:211-239). Setting
     //    program_owner eagerly trips rule 4 of validate_execution
@@ -149,7 +149,7 @@ pub fn expected_definition_after_init(
     a
 }
 
-/// Expected init-holding post-state after Initialize — total_supply is
+/// Expected init-holding post-state after Initialize - total_supply is
 /// 0 so the holding starts at 0 balance.
 pub fn expected_init_holding_after_init(
     init_holding: &AccountWithMetadata,

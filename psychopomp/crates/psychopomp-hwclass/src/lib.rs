@@ -1,4 +1,4 @@
-//! `HwClass` — minimal shared type the LEZ guests need.
+//! `HwClass` - minimal shared type the LEZ guests need.
 //!
 //! Kept in its own no-deps crate so the LEZ guest crates can pull it without
 //! cascading the full `psychopomp-types` dep graph (which brings uuid /

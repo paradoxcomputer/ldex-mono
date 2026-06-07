@@ -56,7 +56,7 @@ tokio = { version = "1.28.2", features = ["net", "rt-multi-thread", "sync", "mac
 # composite-receipt change in `lez/nssa/src/privacy_preserving_transaction/
 # circuit.rs` (succinct → composite, ~2-3× faster STARK proof gen) takes
 # effect in LDEX builds. Both nssa and nssa_core must be patched together
-# to keep the dep graph consistent — patching only one causes two
+# to keep the dep graph consistent - patching only one causes two
 # versions of nssa_core to coexist and the build fails.
 [patch."https://github.com/logos-blockchain/logos-execution-zone.git"]
 # Path-relative to a `_lez` symlink that `setup.sh` creates at the repo

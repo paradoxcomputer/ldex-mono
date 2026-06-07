@@ -1,4 +1,4 @@
-//! WLEZ shell admin — drives the WLEZ FFI directly so bootstrap.sh can
+//! WLEZ shell admin - drives the WLEZ FFI directly so bootstrap.sh can
 //! deploy + initialise + pre-wrap WLEZ without learning Rust.
 //!
 //!   cargo run -q --release --example wlez_admin -- defid   <wlez_program_id>

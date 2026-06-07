@@ -64,7 +64,7 @@ pub fn apply_to_account(
         .try_into()
         .map_err(|e: nssa_core::account::data::DataTooBigError| BridgeError::DataTooBig(e.to_string()))?;
     // On Register (current was None), the per-operator slot is a brand-new
-    // PDA owned by this program — emit a Claim::Pda so the runtime
+    // PDA owned by this program - emit a Claim::Pda so the runtime
     // allocates it under (registry_program_id, sha256(...)). On every other
     // op, the slot already exists and the post-state passes through with no
     // claim. The PDA seed scheme matches `operator_state_seed(operator_pk)`

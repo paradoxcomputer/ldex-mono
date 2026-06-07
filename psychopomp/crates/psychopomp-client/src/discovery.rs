@@ -53,7 +53,7 @@ pub struct RegistryFile {
 pub enum Source {
     /// Local JSON file. Standard for Phase-1-off-chain.
     File(PathBuf),
-    /// On-chain registry query. Not yet implemented — Phase-1 will hook it
+    /// On-chain registry query. Not yet implemented - Phase-1 will hook it
     /// up via an LEZ RPC query against the deployed registry program.
     Chain { rpc_endpoint: String, program_id: [u32; 8] },
 }

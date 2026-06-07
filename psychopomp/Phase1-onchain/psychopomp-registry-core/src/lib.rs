@@ -45,7 +45,7 @@ pub fn operator_state_pda(
 pub struct RegistryParams {
     /// Minimum bond required at Register time (LEZ).
     pub min_stake: u128,
-    /// `K` in `S >= K * R_epoch` — stake-to-revenue multiplier (initial: 100).
+    /// `K` in `S >= K * R_epoch` - stake-to-revenue multiplier (initial: 100).
     pub stake_to_revenue_k: u32,
     /// Unbonding cooldown in epochs (initial: 2 weeks of epochs).
     pub unbond_epochs: u64,

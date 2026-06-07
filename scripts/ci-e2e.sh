@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# LDEX CI runner — RFP-004 acceptance #2: end-to-end integration tests
+# LDEX CI runner - RFP-004 acceptance #2: end-to-end integration tests
 # against a LEZ sequencer in standalone mode, runnable in CI.
 #
 # RISC0_DEV_MODE=1 → fast fake proofs (CI speed; a nightly job runs ≥1
@@ -10,7 +10,7 @@
 #      required for a CI service to have a "default branch" to gate on.
 #   2. `amm/src/tests.rs` call sites need the `clock_ts` arg added
 #      (post §5.11③ Clock threading) for `cargo test -p amm_program`
-#      to compile — tracked; production lib + guest already build clean.
+#      to compile - tracked; production lib + guest already build clean.
 set -euo pipefail
 
 export PATH="$HOME/.cargo/bin:$HOME/.risc0/bin:$PATH"
@@ -62,4 +62,4 @@ QMLLINT=$(command -v qmllint || ls /nix/store/*/bin/qmllint 2>/dev/null | head -
 [ -n "$QMLLINT" ] && { [ "$("$QMLLINT" "$REPO/mini-app/ui/Main.qml" 2>&1 | grep -c '^Error')" = 0 ] \
   || fail "qmllint errors in Main.qml"; }
 
-echo "CI OK — all gates green."
+echo "CI OK - all gates green."

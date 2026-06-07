@@ -1,4 +1,4 @@
-//! RFP Func #8 — `AddLiquidity` with the user side using Associated Token
+//! RFP Func #8 - `AddLiquidity` with the user side using Associated Token
 //! Accounts. Both deposit legs go through `ata::Transfer` (owner-authorised);
 //! the LP mint into the user's ATA-LP uses the existing PDA-authorised
 //! `token::Mint` since `Mint`'s recipient is just a Fungible token holding.
@@ -99,7 +99,7 @@ pub fn add_liquidity_ata(
     assert!(delta_lp != 0, "Payable LP must be nonzero");
     assert!(delta_lp >= min_amount_liquidity.get(), "Payable LP < min provided");
 
-    // Pool post-state — mirror add::add_liquidity's update.
+    // Pool post-state - mirror add::add_liquidity's update.
     let mut pool_post = pool.account.clone();
     let oracle_pre = {
         let mut o = pool_def_data.clone();

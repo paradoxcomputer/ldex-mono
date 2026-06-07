@@ -1,7 +1,7 @@
 //! Host-side embedding of the stablecoin RISC Zero guest ELF.
 //!
-//! Re-exports the constants produced by `build.rs` via `risc0_build::embed_methods` —
-//! `STABLECOIN_ELF`, `STABLECOIN_PATH`, and `STABLECOIN_ID` — used by host code to
+//! Re-exports the constants produced by `build.rs` via `risc0_build::embed_methods` -
+//! `STABLECOIN_ELF`, `STABLECOIN_PATH`, and `STABLECOIN_ID` - used by host code to
 //! load and identify the guest binary.
 
 #![allow(

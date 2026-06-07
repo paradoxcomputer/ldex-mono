@@ -56,10 +56,10 @@ fi
 # The risc0 cuda feature builds against nvcc on PATH and links libcudart from
 # /usr/local/cuda/lib64. The cuda:12.4-devel image already has both.
 if ! command -v nvcc >/dev/null; then
-    echo "[bootstrap] nvcc not found — install CUDA toolkit before running, or use the cuda-devel image" >&2
+    echo "[bootstrap] nvcc not found - install CUDA toolkit before running, or use the cuda-devel image" >&2
     exit 1
 fi
-nvidia-smi || { echo "[bootstrap] nvidia-smi failed — no GPU visible to container" >&2; exit 1; }
+nvidia-smi || { echo "[bootstrap] nvidia-smi failed - no GPU visible to container" >&2; exit 1; }
 
 # 6. Build --------------------------------------------------------------------
 echo "[bootstrap] cargo build --release --features gpu -p psychopomp-prover"

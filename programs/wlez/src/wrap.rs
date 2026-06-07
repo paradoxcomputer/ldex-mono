@@ -1,11 +1,11 @@
-//! WLEZ::Wrap — lock `amount` native LEZ into the vault, mint `amount`
+//! WLEZ::Wrap - lock `amount` native LEZ into the vault, mint `amount`
 //! WLEZ to the user's holding.
 //!
 //! Authorisations:
-//!   - `user_native` — signs the parent tx (user has the keypair).
-//!   - `vault` — destination of the native transfer; receiver does not
+//!   - `user_native` - signs the parent tx (user has the keypair).
+//!   - `vault` - destination of the native transfer; receiver does not
 //!     need to authorise on `authenticated_transfer_program::transfer`.
-//!   - `definition` — the mint authority; flipped is_authorized=true and
+//!   - `definition` - the mint authority; flipped is_authorized=true and
 //!     backed by `with_pda_seeds(wlez_definition_seed)` so the token
 //!     program's `assert!(definition_account.is_authorized)` passes.
 //!

@@ -1,4 +1,4 @@
-/* C ABI for libldex_amm_ffi.so — the LDEX (fee-tier) AMM shim.
+/* C ABI for libldex_amm_ffi.so - the LDEX (fee-tier) AMM shim.
  *
  * Hand-written to match ffi/ldex-amm-ffi/src/{lib,submit}.rs exactly.
  * All `*_id` / `out*` params are 32-byte buffers (raw account/program id
@@ -45,7 +45,7 @@ int32_t ldex_amm_lp_lock_id(const uint8_t *amm_program_id,
 /* Parse "Public/<b58>" | "Private/<b58>" | "<b58>" | "<64hex>" -> 32 bytes */
 int32_t ldex_amm_parse_account_id(const char *s, uint8_t *out);
 
-/* RFP-004 Func #8 — Associated Token Accounts.
+/* RFP-004 Func #8 - Associated Token Accounts.
  * ldex_ata_id: deterministic ATA address for (owner, mint) =
  *   for_public_pda(ata_pid, sha256(owner || mint)). Pure, no I/O.
  * ldex_ata_create: submit the ATA program's idempotent Create (public
@@ -55,7 +55,7 @@ int32_t ldex_ata_id(const uint8_t *ata_program_id, const uint8_t *owner,
 int32_t ldex_ata_create(const char *config_path, const char *storage_path,
                         const uint8_t *ata_program_id, const uint8_t *owner,
                         const uint8_t *token_def, uint8_t *out_tx_hash);
-/* RFP-004 Func #8 — `ata::Transfer` as a public tx. Drains `amount`
+/* RFP-004 Func #8 - `ata::Transfer` as a public tx. Drains `amount`
  * of the underlying token from `sender_ata` (PDA-owned by the ATA
  * program) into `recipient` (any initialised TokenHolding for the
  * same def). Owner signs; the ATA program internally chains
@@ -81,12 +81,12 @@ int32_t ldex_amm_token_balance(const char *config_path,
                                size_t cap);
 
 /* Manual shield / deshield for FUNGIBLE TOKENS. These are
- * privacy-preserving txs (STARK proof generated in the wallet —
+ * privacy-preserving txs (STARK proof generated in the wallet -
  * tens of seconds under RISC0_DEV_MODE=0). Distinct from the
  * wallet-ffi `wallet_ffi_transfer_{shielded_owned,deshielded}`,
  * which target the native LEZ `authenticated_transfer_program`
  * and refuse on token accounts (those FFIs check `account.balance`,
- * the native field, which is always 0 for token holdings — token
+ * the native field, which is always 0 for token holdings - token
  * amounts live in `account.data`).
  *
  * shield:   sender = ATA_<L> or HOLD_<L>  (Public),
@@ -102,7 +102,7 @@ int32_t ldex_token_deshield(const char *config_path, const char *storage_path,
                             ldex_u128 amount, uint8_t *out_tx_hash);
 
 /* On-chain price history (design.md §5.11 layer ②). Pure read of the
- * price_indexer daemon's persisted CSV — no chain call, non-blocking.
+ * price_indexer daemon's persisted CSV - no chain call, non-blocking.
  * Writes JSON [{"b":block,"t":unix_ms,"p":price_b_per_a}, ...]
  * (oldest->newest, <= max_points). Empty [] until the daemon has run. */
 int32_t ldex_amm_price_history(const uint8_t *amm_program_id,
@@ -111,7 +111,7 @@ int32_t ldex_amm_price_history(const uint8_t *amm_program_id,
                                uint32_t max_points, uint8_t *out,
                                size_t cap);
 
-/* Pool analytics (RFP Usability #3) — aggregate-only, no individual
+/* Pool analytics (RFP Usability #3) - aggregate-only, no individual
  * positions. JSON {"tvlA","tvlB","volA","volB","feeRevA","feeRevB",
  * "samples","feeBps"}: TVL = latest on-chain reserves (exact); vol/fee
  * = reserve-delta approximation over the on-chain-sourced feed. */
@@ -120,7 +120,7 @@ int32_t ldex_amm_volume_estimate(const uint8_t *amm_program_id,
                                  const uint8_t *token_b_def, ldex_u128 fees,
                                  uint8_t *out, size_t cap);
 
-/* ON-CHAIN price history (design.md §5.11③) — reads the pool account's
+/* ON-CHAIN price history (design.md §5.11③) - reads the pool account's
  * on-chain observation ring directly; gapless by construction (every
  * swap/liquidity tx pushed an observation). JSON
  * [{"t":unix_ms,"p":price_b_per_a}, ...]. This is the source of truth;
@@ -152,7 +152,7 @@ int32_t ldex_amm_swap_exact_in(const char *config_path,
                                ldex_u128 min_amount_out, ldex_u128 fees,
                                uint64_t deadline, uint8_t *out_tx_hash);
 
-/* RFP Func #8 — swap with the user side using Associated Token Accounts.
+/* RFP Func #8 - swap with the user side using Associated Token Accounts.
  * The owner authorises the spend (signer); the ATA program internally
  * PDA-authorises the sender ATA. The ATA addresses are deterministic from
  * (owner, definition); the FFI derives them via LDEX_ATA_PROGRAM_ID. */
@@ -168,7 +168,7 @@ int32_t ldex_amm_swap_exact_in_ata(const char *config_path,
                                    ldex_u128 fees, uint64_t deadline,
                                    uint8_t *out_tx_hash);
 
-/* RFP Func #8 — exact-output swap with the user side using ATAs. */
+/* RFP Func #8 - exact-output swap with the user side using ATAs. */
 int32_t ldex_amm_swap_exact_out_ata(const char *config_path,
                                     const char *storage_path,
                                     const uint8_t *amm_program_id,
@@ -181,7 +181,7 @@ int32_t ldex_amm_swap_exact_out_ata(const char *config_path,
                                     ldex_u128 fees, uint64_t deadline,
                                     uint8_t *out_tx_hash);
 
-/* RFP Func #8 — add liquidity with the user side using ATAs. */
+/* RFP Func #8 - add liquidity with the user side using ATAs. */
 int32_t ldex_amm_add_liquidity_ata(const char *config_path,
                                    const char *storage_path,
                                    const uint8_t *amm_program_id,
@@ -194,7 +194,7 @@ int32_t ldex_amm_add_liquidity_ata(const char *config_path,
                                    ldex_u128 fees, uint64_t deadline,
                                    uint8_t *out_tx_hash);
 
-/* RFP Func #8 — remove liquidity with the user side using ATAs.
+/* RFP Func #8 - remove liquidity with the user side using ATAs.
  * Owner signs (provides outer-tx nonce); the AMM's RemoveLiquidity does
  * not require user-holding authorisation (vault transfers are PDA-auth,
  * LP burn is lp_def-PDA-auth) so no new on-chain instruction is needed. */
@@ -210,15 +210,15 @@ int32_t ldex_amm_remove_liquidity_ata(const char *config_path,
                                       ldex_u128 fees, uint64_t deadline,
                                       uint8_t *out_tx_hash);
 
-/* Private (PrivateOwned) swap — design.md §5.10 "Private" mode. One
+/* Private (PrivateOwned) swap - design.md §5.10 "Private" mode. One
  * privacy-preserving tx over the deployed AMM; user holdings are
- * deshielded inside the proof circuit and re-shielded — no public
+ * deshielded inside the proof circuit and re-shielded - no public
  * account ever appears on-chain. Same args as ldex_amm_swap_exact_in.
  * Proving runs in-process (risc0): set RISC0_DEV_MODE=1 for the dev
  * loop; real proofs need LOGOS_BLOCKCHAIN_CIRCUITS (~270 s). */
 /* user_holding_a/_b are the user's PRIVATE (PrivateOwned) holding account
  * ids; token_def_a/_b are the pool's two token-definition ids (known from
- * bootstrap LDEX_DEF_A/B) — definitions are passed explicitly because
+ * bootstrap LDEX_DEF_A/B) - definitions are passed explicitly because
  * private holdings have no public state to read them from. */
 int32_t ldex_amm_private_swap_exact_in(const char *config_path,
                                        const char *storage_path,
@@ -233,11 +233,11 @@ int32_t ldex_amm_private_swap_exact_in(const char *config_path,
                                        ldex_u128 fees, uint64_t deadline,
                                        uint8_t *out_tx_hash);
 
-/* Private-Disposable swap — RFP-literal account-A model (design.md
+/* Private-Disposable swap - RFP-literal account-A model (design.md
  * §5.10 mode 2). Top program = deployed account-A router; AMM + token
  * are chained-call deps. User's private input holding deshielded into a
  * fresh single-use public account A, A swaps publicly, A's output
- * re-shielded to the user's private output holding — one proof. a_holding
+ * re-shielded to the user's private output holding - one proof. a_holding
  * _a/_b are two fresh public accounts the caller creates per op (never
  * reused). Proving in-process: RISC0_DEV_MODE=1 dev / ~270 s real. */
 int32_t ldex_amm_disposable_swap_exact_in(
@@ -253,7 +253,7 @@ int32_t ldex_amm_disposable_swap_exact_in(
 /* Private add/remove liquidity (RFP Func #2: LP via deshield→interact→
  * re-shield from a private account). Same proven mechanism as
  * ldex_amm_private_swap_exact_in: holdings deshielded in-circuit, LP
- * minted/burned in the public pool, outputs re-shielded — no public
+ * minted/burned in the public pool, outputs re-shielded - no public
  * address on-chain. user_holding_a/b/lp are the user's PRIVATE holdings;
  * token_def_a/b are the pool's definition ids. Real proof (RISC0_DEV_
  * MODE=1 dev / minutes real). */
@@ -320,7 +320,7 @@ int32_t ldex_amm_remove_liquidity(const char *config_path,
                                   ldex_u128 fees, uint64_t deadline,
                                   uint8_t *out_tx_hash);
 
-/* WLEZ (wrapped native LEZ) — pure derivations + Initialize / Wrap /
+/* WLEZ (wrapped native LEZ) - pure derivations + Initialize / Wrap /
  * Unwrap submit ops. Public txs (no privacy proof). See
  * `docs/wlez-design.md`. */
 
@@ -332,7 +332,7 @@ int32_t ldex_wlez_definition_id(const uint8_t *wlez_program_id,
 int32_t ldex_wlez_vault_id(const uint8_t *wlez_program_id, uint8_t *out);
 
 /* One-shot setup: claims the vault PDA + creates the WLEZ token
- * definition. Idempotent — re-running this on a deployed-and-init'd
+ * definition. Idempotent - re-running this on a deployed-and-init'd
  * WLEZ is a no-op tx. `reference_token_def` is any existing
  * token-program-owned definition (e.g. a TOKENA def); WLEZ reads its
  * `program_owner` to find the token program. `payer_holding` is any
@@ -367,7 +367,7 @@ int32_t ldex_wlez_unwrap(const char *config_path,
                          const uint8_t *user_native_account,
                          ldex_u128 amount, uint8_t *out_tx_hash);
 
-/* amm_v2 combined private-swap program — testnet-compatible mode-2
+/* amm_v2 combined private-swap program - testnet-compatible mode-2
  * disposable swap. Replaces the (router + amm + 4× token::Transfer)
  * recursive tree with (amm_v2 + 4× token::Transfer). Saves 1 chained
  * call (~12-15M outer-STARK cycles, ~5-10% wall-clock reduction
@@ -547,7 +547,7 @@ int32_t ldex_amm_v2_add_liquidity_ata(
     ldex_u128 max_amount_to_add_token_b,
     ldex_u128 fees, uint64_t deadline, uint8_t *out_tx_hash);
 
-/* RFP-004 Func #8 (LP side) — pool create whose initial user LP is
+/* RFP-004 Func #8 (LP side) - pool create whose initial user LP is
  * minted into `ATA(owner, lp_def)`. Token deposits drain from the
  * user's keypair `user_holding_a/b` via canonical `token::Transfer`
  * (the new vaults start default and only the token program's PDA-
@@ -562,7 +562,7 @@ int32_t ldex_amm_v2_new_pool_ata(
     ldex_u128 amount_a, ldex_u128 amount_b,
     ldex_u128 fees, uint64_t deadline, uint8_t *out_tx_hash);
 
-/* RFP-004 Func #8 — remove-liquidity with user-side ATAs. Burns LP from
+/* RFP-004 Func #8 - remove-liquidity with user-side ATAs. Burns LP from
  * `ata(owner, lp_def)` and returns underlying into `(ata_a, ata_b)`. */
 int32_t ldex_amm_v2_remove_liquidity_ata(
     const char *config_path, const char *storage_path,

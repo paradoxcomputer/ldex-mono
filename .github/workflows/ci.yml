@@ -5,7 +5,7 @@
 # workflow is the ready-to-activate deliverable. `git init` + push to a
 # host (GitHub) makes it live, at which point "green on default branch"
 # is enforced by the `e2e` job below. The heavy LEZ/RISC-Zero toolchain
-# is assumed cached on the runner (self-hosted) — see scripts/ci-e2e.sh
+# is assumed cached on the runner (self-hosted) - see scripts/ci-e2e.sh
 # for the exact gates (unit, shim build, IDL drift, standalone-sequencer
 # e2e, qmllint). RISC0_DEV_MODE=1 keeps proofs fast; `nightly-real-proof`
 # does ≥1 real-proof pass.

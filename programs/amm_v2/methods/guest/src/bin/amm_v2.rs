@@ -1,7 +1,7 @@
-// amm_v2 — combined AMM + private-swap program. Full drop-in
+// amm_v2 - combined AMM + private-swap program. Full drop-in
 // replacement of `amm` PLUS combined disposable swap variants
 // (token↔token, LEZ→token, token→LEZ). Receipts verify under upstream
-// PRIVACY_PRESERVING_CIRCUIT_ID — testnet-compatible.
+// PRIVACY_PRESERVING_CIRCUIT_ID - testnet-compatible.
 
 #![no_main]
 
@@ -124,9 +124,9 @@ mod amm_v2 {
     /// Mode-0 PUBLIC swap. amm_v2's public swap DOES skip the clock /
     /// oracle update (no Clock in the account list) to keep the
     /// account schema identical between the public and private circuit
-    /// variants — simplifies the FFI / cpp_plugin / pool indexer. The
+    /// variants - simplifies the FFI / cpp_plugin / pool indexer. The
     /// pool's oracle stays at block_ts_last=0 (no on-chain price
-    /// history on amm_v2 pools — analytics callers should consume the
+    /// history on amm_v2 pools - analytics callers should consume the
     /// on-chain cum_volume / cum_fees counters which amm_v2 DOES
     /// update on every swap).
     #[expect(clippy::too_many_arguments, reason = "fixed protocol account list")]
@@ -265,9 +265,9 @@ mod amm_v2 {
             .with_timestamp_validity_window(..deadline))
     }
 
-    /// RFP Func #8 — mode-0 public swap with the user side using ATAs.
+    /// RFP Func #8 - mode-0 public swap with the user side using ATAs.
     /// Account order: `[pool, vault_a, vault_b, owner, ata_a, ata_b]`
-    /// (no Clock — amm_v2 pools skip the on-chain oracle).
+    /// (no Clock - amm_v2 pools skip the on-chain oracle).
     #[expect(clippy::too_many_arguments, reason = "fixed protocol account list")]
     #[instruction]
     pub fn swap_exact_input_ata(
@@ -293,7 +293,7 @@ mod amm_v2 {
             .with_timestamp_validity_window(..deadline))
     }
 
-    /// RFP Func #8 — mode-0 public exact-output swap via ATAs.
+    /// RFP Func #8 - mode-0 public exact-output swap via ATAs.
     #[expect(clippy::too_many_arguments, reason = "fixed protocol account list")]
     #[instruction]
     pub fn swap_exact_output_ata(
@@ -319,7 +319,7 @@ mod amm_v2 {
             .with_timestamp_validity_window(..deadline))
     }
 
-    /// RFP Func #8 — create a new amm_v2 pool with user-side ATAs.
+    /// RFP Func #8 - create a new amm_v2 pool with user-side ATAs.
     /// Mint LP into `ata(owner, lp_def)`.
     #[expect(clippy::too_many_arguments, reason = "fixed protocol account list")]
     #[instruction]
@@ -351,7 +351,7 @@ mod amm_v2 {
             .with_timestamp_validity_window(..deadline))
     }
 
-    /// RFP Func #8 — remove liquidity with the user side using ATAs.
+    /// RFP Func #8 - remove liquidity with the user side using ATAs.
     /// Drains `ata_lp` via `ata::Burn`; returns underlying via vault
     /// PDA-authed `token::Transfer` into `ata_a` / `ata_b`.
     #[expect(clippy::too_many_arguments, reason = "fixed protocol account list")]
@@ -385,7 +385,7 @@ mod amm_v2 {
             .with_timestamp_validity_window(..deadline))
     }
 
-    /// RFP Func #8 — add liquidity with the user side using ATAs.
+    /// RFP Func #8 - add liquidity with the user side using ATAs.
     #[expect(clippy::too_many_arguments, reason = "fixed protocol account list")]
     #[instruction]
     pub fn add_liquidity_ata(

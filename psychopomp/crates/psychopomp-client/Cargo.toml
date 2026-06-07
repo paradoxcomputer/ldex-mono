@@ -26,7 +26,7 @@ hkdf.workspace = true
 sha2.workspace = true
 rand.workspace = true
 
-# We import risc0's Receipt type only for the public return type — no `prove`
+# We import risc0's Receipt type only for the public return type - no `prove`
 # feature here, so wallet builds stay CUDA-free.
 risc0-zkvm = { workspace = true, features = ["client"] }
 

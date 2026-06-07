@@ -1,4 +1,4 @@
-//! RFP Func #8 — AMM swap with the user side using **Associated Token
+//! RFP Func #8 - AMM swap with the user side using **Associated Token
 //! Accounts (ATAs)** instead of keypair token holdings.
 //!
 //! ATAs are deterministic per `(owner, definition)` (see `ata_core`); the
@@ -66,7 +66,7 @@ pub fn swap_exact_input_ata(
     // SECURITY: the ATA program is submitter-chosen, so it must equal the one
     // pinned at pool creation. A substitute (e.g. no-op) program would skip the
     // real input `token::Transfer` into the vault while the output leg below
-    // still pays out — draining the pool. (A default/zero pin means a
+    // still pays out - draining the pool. (A default/zero pin means a
     // keypair-created pool with no ATA support: such ops are rejected here.)
     assert_eq!(
         ata_program_id, pool_def_data.ata_program_id,
@@ -74,7 +74,7 @@ pub fn swap_exact_input_ata(
     );
 
     // The ATA program id MUST come from the instruction (we cannot read
-    // it from ata_*.account.program_owner — ATAs are token holdings owned
+    // it from ata_*.account.program_owner - ATAs are token holdings owned
     // by the token program; the ATA program holds PDA authority via the
     // ATA seed derivation, not storage ownership). Both ATAs share the
     // same underlying token program owner, which the AMM derives from
@@ -162,7 +162,7 @@ pub fn swap_exact_input_ata(
     // On-chain oracle: integrate pre-swap reserves over [t_last, now].
     let mut oracle_pre = pool_def_data.clone();
     oracle_pre.oracle_update(clock_ts);
-    // Reserve + RFP Usability #3 volume/fee accumulators (shared helper —
+    // Reserve + RFP Usability #3 volume/fee accumulators (shared helper -
     // single source of truth), then layer the oracle ring/cum/ts on top.
     let mut pool_post_def =
         apply_swap_to_pool_def(pool_def_data, deposit_a, withdraw_a, deposit_b, withdraw_b);
@@ -189,7 +189,7 @@ pub fn swap_exact_input_ata(
     (post_states, chained_calls)
 }
 
-/// RFP Func #8 — `SwapExactOutput` with the user side using ATAs.
+/// RFP Func #8 - `SwapExactOutput` with the user side using ATAs.
 /// Symmetric to `swap_exact_input_ata`; the math mirrors
 /// `swap::swap_exact_output` / `exact_output_swap_logic` byte-for-byte.
 #[expect(clippy::too_many_arguments, reason = "fixed protocol account list")]
@@ -224,7 +224,7 @@ pub fn swap_exact_output_ata(
     assert!(vault_a_balance >= pool_def_data.reserve_a, "vault_a balance < reserve_a");
     assert!(vault_b_balance >= pool_def_data.reserve_b, "vault_b balance < reserve_b");
 
-    // SECURITY: see `swap_exact_input_ata` — the ATA program must match the one
+    // SECURITY: see `swap_exact_input_ata` - the ATA program must match the one
     // pinned at creation, else a no-op substitute drains the pool.
     assert_eq!(
         ata_program_id, pool_def_data.ata_program_id,
@@ -291,7 +291,7 @@ pub fn swap_exact_output_ata(
     };
     let mut oracle_pre = pool_def_data.clone();
     oracle_pre.oracle_update(clock_ts);
-    // Reserve + RFP Usability #3 volume/fee accumulators (shared helper —
+    // Reserve + RFP Usability #3 volume/fee accumulators (shared helper -
     // single source of truth), then layer the oracle ring/cum/ts on top.
     let mut pool_post_def =
         apply_swap_to_pool_def(pool_def_data, deposit_a, withdraw_a, deposit_b, withdraw_b);

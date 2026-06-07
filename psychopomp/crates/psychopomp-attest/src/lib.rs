@@ -1,6 +1,6 @@
 //! Attestation: stub TEE for Phase-0, traits sized to swap in NVIDIA NRAS /
 //! AMD SEV-SNP later. The on-the-wire `AttestationDoc` shape is identical for
-//! both — only the chain validator changes.
+//! both - only the chain validator changes.
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use psychopomp_types::{AttestationDoc, HwClass, JobBinding, JobRequest, SCHEMA_VERSION};

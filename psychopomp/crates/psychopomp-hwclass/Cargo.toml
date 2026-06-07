@@ -3,7 +3,7 @@ name = "psychopomp-hwclass"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "HwClass enum — the only psychopomp wire type the LEZ guests need."
+description = "HwClass enum - the only psychopomp wire type the LEZ guests need."
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }

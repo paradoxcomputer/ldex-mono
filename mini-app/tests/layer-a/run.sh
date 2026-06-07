@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Layer A — plugin/FFI integration tests.
+# Layer A - plugin/FFI integration tests.
 #
 # Usage:
 #   bash mini-app/tests/layer-a/run.sh           # read-only tests (~10s)
@@ -17,7 +17,7 @@ REPO="$(cd "$HERE/../../.." && pwd)"
 ENV_FILE="${LDEX_ENV_FILE:-$REPO/scripts/bootstrap.env}"
 
 if [ ! -f "$ENV_FILE" ]; then
-    echo "FAIL: $ENV_FILE not found — run scripts/bootstrap.sh first" >&2
+    echo "FAIL: $ENV_FILE not found - run scripts/bootstrap.sh first" >&2
     exit 2
 fi
 # shellcheck disable=SC1090

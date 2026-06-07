@@ -1,4 +1,4 @@
-# psychopomp-registry — Phase-1
+# psychopomp-registry - Phase-1
 
 Pure-Rust state machine: [`../psychopomp-registry-core`](../psychopomp-registry-core).
 Schema, instructions, and validation logic are implemented and unit-tested

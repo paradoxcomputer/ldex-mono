@@ -1,4 +1,4 @@
-// LDEX UI wiring — programmatically clicks buttons in Main.qml against a
+// LDEX UI wiring - programmatically clicks buttons in Main.qml against a
 // mock `logos` and asserts the right plugin method is invoked with the
 // right args. Runs under qmltestrunner with QT_QPA_PLATFORM=offscreen,
 // no display required.
@@ -9,7 +9,7 @@ Item {
     id: testRoot
     width: 1200; height: 1200
 
-    // Recording mock — every callModule / callModuleAsync ends up here.
+    // Recording mock - every callModule / callModuleAsync ends up here.
     QtObject {
         id: logos
         property var callLog: []
@@ -155,7 +155,7 @@ Item {
             logos.clearLog();
             app.item.refresh();
             wait(50);
-            // refresh() calls jget("walletTokens", []) + others — we just
+            // refresh() calls jget("walletTokens", []) + others - we just
             // confirm one of the canonical refresh calls landed.
             verify(logos.findCall("walletTokens") !== null,
                 "refresh() must invoke walletTokens. log=" + JSON.stringify(logos.callLog.map(function(c){return c.method})));
@@ -300,7 +300,7 @@ Item {
         // ── 9. balance guard refuses private swap with zero PRIV ──
         function test_14_balance_guard_refuses_when_priv_zero() {
             // Mock returns PRIV=50000 above. Set tokA to TOKENA, request 99999
-            // — exceeds available. Verify privateSwapForStart is NOT called.
+            // - exceeds available. Verify privateSwapForStart is NOT called.
             logos.clearLog();
             // privBalanceForDef should return "50000" for TOKENA's def.
             var bal = app.item.privBalanceForDef(
@@ -348,17 +348,17 @@ Item {
             compare(c.args[0], 1);
         }
 
-        // ── 10. TRUE BUTTON CLICK — Shield, in the rendered tree ──
+        // ── 10. TRUE BUTTON CLICK - Shield, in the rendered tree ──
         // Walks Main.qml's rendered children to find a Button with text
         // "Shield", clicks it, observes the resulting plugin call. Proves
         // the literal `onClicked` binding is wired (not just runAction).
         function test_15_shield_button_click_real() {
             logos.clearLog();
             // Activate the Account tab so the Shield card is reachable.
-            // tabs is an Item inside Main.qml — find it by tree walk.
+            // tabs is an Item inside Main.qml - find it by tree walk.
             // (objectName is not set; we recurse looking for an Item that
             // has a `currentIndex` property AND children "Swap","Pools",
-            // "Account" — only the tabs Item matches.)
+            // "Account" - only the tabs Item matches.)
             function findTabs(node) {
                 if (!node) return null;
                 if (typeof node.currentIndex !== "undefined"

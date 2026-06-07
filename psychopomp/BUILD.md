@@ -1,4 +1,4 @@
-# Psychopomp — build & run
+# Psychopomp - build & run
 
 Phase-0 + Phase-1 (off-chain). The protocol surface is real (attestation
 handshake → ECDH → measurement-bound AEAD → encrypted-witness → STARK +
@@ -92,8 +92,8 @@ baseline.
 
 ### Operator-side tuning
 
-- `--max-concurrent N` — number of in-flight proof jobs (default 2).
-- `--policy /path/to/policy.toml` — restrict accepted IMAGE_IDs and limits:
+- `--max-concurrent N` - number of in-flight proof jobs (default 2).
+- `--policy /path/to/policy.toml` - restrict accepted IMAGE_IDs and limits:
   ```toml
   allowed_image_ids = [
       "fbfe622b...",   # e.g. LDEX amm_v2 program id, once you outsource its proofs
@@ -102,7 +102,7 @@ baseline.
   max_inline_elf_bytes = 262144     # forces big ELFs through POST /v0/elf
   max_witness_ct_bytes = 4194304
   ```
-- `--attestation-valid-secs 300` — fresh attestation doc window.
+- `--attestation-valid-secs 300` - fresh attestation doc window.
 
 ### Wallet-side ergonomics (client SDK)
 
@@ -180,7 +180,7 @@ repo.
 ### `cargo` features
 
 - Default workspace build: NO CUDA, NO `prove` feature in `psychopomp-client`
-  — keeps wallet integrators CUDA-free.
+  - keeps wallet integrators CUDA-free.
 - `cargo build --features gpu -p psychopomp-prover`: enables
   `risc0-zkvm/cuda` for GPU-accelerated proving.
 
@@ -204,7 +204,7 @@ for inner in chained_inner_receipts {
 }
 ```
 
-## Phase 1 — on-chain registry/escrow (optional)
+## Phase 1 - on-chain registry/escrow (optional)
 
 Phase-0 doesn't need a chain. Skip this section unless you specifically want
 to exercise the on-chain registry/escrow programs on a local LEZ sequencer.
@@ -258,7 +258,7 @@ Wallet/sequencer paths can be overridden via env vars:
 - **No commit-reveal yet** (README §"MEV / front-running"). Operators can see
   the ciphertext before they've publicly committed to running the job. The
   AEAD AAD still binds the witness to a specific operator's MRENCLAVE, so a
-  peek-then-re-bid attack would still need that operator's enclave key — but
+  peek-then-re-bid attack would still need that operator's enclave key - but
   a fully malicious operator could leak the request even if they can't decrypt.
 
 ## LDEX integration
@@ -271,7 +271,7 @@ The only remaining hooks before LDEX can outsource via psychopomp:
 2. `psychopomp_client::ensure_elf_cached` should be called once at wallet
    startup (or lazy on first prove) per pinned image_id.
 3. The `payload.assumptions` field is wired to take borsh-encoded inner
-   receipts from each chained call — psychopomp's prover passes them
+   receipts from each chained call - psychopomp's prover passes them
    through to `ExecutorEnv::add_assumption`.
 
 Per the standing rule, this repo does not touch the LDEX tree.

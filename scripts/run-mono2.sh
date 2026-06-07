@@ -7,7 +7,7 @@
 #   3. Allocate + init two fresh public account-A holdings (a_a for TOKENA, a_b for TOKENB)
 #   4. Pre-fund a_a so the deshield credit doesn't exceed `is_authorized` (the
 #      router-side `shift_balance` requires Fungible; init sets balance=0 which
-#      is fine for net-zero round-trip — no actual minted balance needed).
+#      is fine for net-zero round-trip - no actual minted balance needed).
 #   5. Run `e2e_testnet mono2 …` and capture wall-clock
 #   6. Tail seq.log for "Validated transaction" or "InvalidPrivacyPreservingProof"
 #
@@ -18,7 +18,7 @@ export PATH="$HOME/.cargo/bin:$HOME/.risc0/bin:$PATH"
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 ENV_FILE="${LDEX_ENV_FILE:-$REPO/scripts/bootstrap.env}"
-[ -f "$ENV_FILE" ] || { echo "FAIL: $ENV_FILE missing — bootstrap didn't finish?" >&2; exit 1; }
+[ -f "$ENV_FILE" ] || { echo "FAIL: $ENV_FILE missing - bootstrap didn't finish?" >&2; exit 1; }
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 

@@ -3,7 +3,7 @@
 # target LEZ L2 sequencer, create user A/B/LP holdings, mint two test
 # tokens.
 #
-# Endpoint is configurable — same script for local-debug and the
+# Endpoint is configurable - same script for local-debug and the
 # self-hosted testnet (the LEZ L2 sequencer genesis-funds initial_accounts
 # identically, so no faucet is needed for the L2 setup; the
 # logos-blockchain faucet funds the L1, not used here):
@@ -74,7 +74,7 @@ new_pub() { w account new public 2>&1 | grep -oE 'Public/[1-9A-HJ-NP-Za-km-z]{32
 # the sequencer. block_create_timeout is 15s → wait 20s. (Same practice on
 # the real testnet: deploy one program per block.)
 deploy() {
-  echo "   deploy $(basename "$1") ($(stat -c%s "$1") B) — own block" >&2
+  echo "   deploy $(basename "$1") ($(stat -c%s "$1") B) - own block" >&2
   w deploy-program "$1" >&2 2>&1 || true
   sleep 20
 }
@@ -90,7 +90,7 @@ TOKEN_BIN="$PROG/target/riscv-guest/token-methods/token-guest/riscv32im-risc0-zk
 ATA_BIN="$PROG/target/riscv-guest/ata-methods/ata-guest/riscv32im-risc0-zkvm-elf/release/ata.bin"
 AMM_BIN="$PROG/target/riscv-guest/amm-methods/amm-guest/riscv32im-risc0-zkvm-elf/release/amm.bin"
 ROUTER_BIN="$PROG/target/riscv-guest/private-swap-router-methods/private-swap-router-guest/riscv32im-risc0-zkvm-elf/release/private_swap_router.bin"
-# WLEZ — wraps the native LEZ gas token 1:1 into an SPL-style token so
+# WLEZ - wraps the native LEZ gas token 1:1 into an SPL-style token so
 # the AMM can take it as a pool side. UI hides the wrap; user just sees
 # "LEZ" in pickers and submits one combined wrap+swap behind the scenes.
 WLEZ_BIN="$PROG/target/riscv-guest/wlez-methods/wlez-guest/riscv32im-risc0-zkvm-elf/release/wlez.bin"
@@ -118,7 +118,7 @@ echo "   amm_v2 program id = $AMM_V2_ID"
 # Token universe. 10 tokens (TOKENA..TOKENJ) are minted, each with a
 # distinct definition account and a keypair-signed user holding (HOLD_X)
 # that receives the supply. ATAs (deterministic per (owner, def)) are
-# created for the first 8 (A..H) and funded out of HOLD_X — these are
+# created for the first 8 (A..H) and funded out of HOLD_X - these are
 # the tokens that are "in the dev wallet" and immediately usable for
 # F8 ATA-based swaps. TOKENI and TOKENJ exist as defs + supply but
 # without funded ATAs, demonstrating the "token-agnostic, any token on
@@ -135,26 +135,26 @@ HOLD_LP=$(new_pub)
 # for the WLEZ wrap (and any future native-paying ops). Without this,
 # auth_transfer's `assert!(sender.balance >= amount)` panics inside the
 # zkVM and the FFI's rc=0 hides the failure (the tx is submitted but
-# rejected during execution — see seq.log; this is the recurring
+# rejected during execution - see seq.log; this is the recurring
 # "verify via seq.log not rc" pattern). The two preconfigured accounts
 # `CbgR6tj…` (10000 LEZ) and `2RHZhw…` (20000 LEZ) are seeded in the
 # sequencer's genesis from `wallet_config.json:initial_accounts` and
 # their signing keys are baked into the wallet config. The sequencer
 # config field MUST be `initial_public_accounts` (not `initial_accounts`)
-# — older configs had the wrong name and serde silently ignored them.
-# 8000 of the preconfigured 10000 — leaves 2000 in the source for any
+# - older configs had the wrong name and serde silently ignored them.
+# 8000 of the preconfigured 10000 - leaves 2000 in the source for any
 # future ops (it's the only natively-funded account in dev).
 LDEX_USER_NATIVE_FUND="${LDEX_USER_NATIVE_FUND:-8000}"
 echo ">> funding USER from preconfigured genesis account ($LDEX_USER_NATIVE_FUND LEZ)"
 # Use 2RHZ... as funder. Cbg... fails with "Can not pay for operation"
 # (the LDEX-fork wallet doesn't carry private keys for it on this sequencer
-# setup, only the public key for verification — handed via initial_accounts).
+# setup, only the public key for verification - handed via initial_accounts).
 # 2RHZ... is in the wallet's signable set + has plenty of native LEZ.
 w auth-transfer send \
   --from "Public/2RHZhw9h534Zr3eq2RGhQete2Hh667foECzXPmSkGni2" \
   --to "$USER" \
   --amount "$LDEX_USER_NATIVE_FUND" >&2 || \
-  echo "   (genesis fund failed — check preconfigured account balance)" >&2
+  echo "   (genesis fund failed - check preconfigured account balance)" >&2
 sleep 14
 declare -A DEF
 declare -A HOLD
@@ -171,7 +171,7 @@ for t in "${TOKENS[@]}"; do
     --definition-account-id "${DEF[$t]}" --supply-account-id "${HOLD[$t]}" >&2
 done
 
-# RFP Func #8 — derive and create ATAs for the first FUND_LIMIT tokens.
+# RFP Func #8 - derive and create ATAs for the first FUND_LIMIT tokens.
 E2E() { ( cd "$AMM_FFI" && PATH="$HOME/.cargo/bin:$HOME/.risc0/bin:$PATH" \
   RISC0_SKIP_BUILD=1 cargo run -q --release --example e2e_testnet -- "$@" ) ; }
 ata_addr() { E2E ataid x x "$ATA_ID" "$1" "$2" 2>/dev/null | head -1; }
@@ -203,7 +203,7 @@ if [ "$LDEX_ATA_FUND" -gt 0 ] 2>/dev/null; then
   done
 fi
 
-# Shielded balances for private modes — the privacy modes (1/2/3) need
+# Shielded balances for private modes - the privacy modes (1/2/3) need
 # PrivateOwned accounts the user has already shielded into. Create one
 # private account per funded token (A..H), shield a slice of HOLD_<L>
 # into it. The mini-app dispatches private modes against LDEX_PRIV_<L>.
@@ -230,19 +230,19 @@ printf '%s\n' "$PW" | "$WALLET" account sync-private >/dev/null 2>&1 || true
 
 # ── WLEZ (wrapped native gas token) ────────────────────────────────
 # The mini-app shows "LEZ" as a normal catalog entry but the AMM only
-# trades token-program holdings — so under the hood we wrap native into
+# trades token-program holdings - so under the hood we wrap native into
 # a 1:1 WLEZ token. Steps:
-#   1. WLEZ_DEF / WLEZ_VAULT — deterministic PDAs derived from the
+#   1. WLEZ_DEF / WLEZ_VAULT - deterministic PDAs derived from the
 #      WLEZ program id (no chain call).
-#   2. wlez_admin initialize — claims the vault + creates the WLEZ
+#   2. wlez_admin initialize - claims the vault + creates the WLEZ
 #      token definition (chained NewFungibleDefinition with total_supply=0).
-#      Idempotent — re-running this on a deployed-and-init'd WLEZ is a no-op.
-#   3. HOLD_W — fresh keypair-derived account that becomes the user's
+#      Idempotent - re-running this on a deployed-and-init'd WLEZ is a no-op.
+#   3. HOLD_W - fresh keypair-derived account that becomes the user's
 #      WLEZ holding. `init_token_holding` converts it to a valid
 #      TokenHolding for WLEZ_DEF.
-#   4. wlez_admin wrap — pre-locks `LDEX_WLEZ_FUND` native LEZ so the
+#   4. wlez_admin wrap - pre-locks `LDEX_WLEZ_FUND` native LEZ so the
 #      user has WLEZ to trade with on first launch. (Skipped silently if
-#      the user has no native balance to spare — e.g. a wallet that
+#      the user has no native balance to spare - e.g. a wallet that
 #      hasn't been faucet-funded yet.)
 echo ">> initialising WLEZ (wrapped native)"
 WLEZ_ADMIN() { ( cd "$AMM_FFI" && PATH="$HOME/.cargo/bin:$HOME/.risc0/bin:$PATH" \
@@ -252,7 +252,7 @@ WLEZ_ADMIN() { ( cd "$AMM_FFI" && PATH="$HOME/.cargo/bin:$HOME/.risc0/bin:$PATH"
 # Sized so that ~40% of the wrap goes to ATA_W (≥2000 for live ATA
 # swaps) and ~60% stays in HOLD_W (≥3000 so it can seed an AMM pool
 # above MINIMUM_LIQUIDITY=1000 in step [9] of run-amm-v2-full-test.sh).
-# Was 100000 — bigger than USER's whole genesis fund, so it silently
+# Was 100000 - bigger than USER's whole genesis fund, so it silently
 # failed at `assert!(sender.balance >= amount)`.
 LDEX_WLEZ_FUND="${LDEX_WLEZ_FUND:-5000}"
 
@@ -266,7 +266,7 @@ echo "   WLEZ vault  (hex32) = $WLEZ_VAULT_HEX"
 echo "   submitting wlez::Initialize"
 WLEZ_ADMIN initialize "$HOME_DIR/wallet_config.json" "$HOME_DIR/storage.json" \
     "$WLEZ_ID" "${DEF[A]}" "$USER" >&2 || \
-  echo "   (initialize failed — assuming already initialised)" >&2
+  echo "   (initialize failed - assuming already initialised)" >&2
 sleep 14
 
 # 3. Fresh user WLEZ holding + init.
@@ -280,10 +280,10 @@ sleep 14
 echo "   pre-wrapping $LDEX_WLEZ_FUND native LEZ into WLEZ"
 WLEZ_ADMIN wrap "$HOME_DIR/wallet_config.json" "$HOME_DIR/storage.json" \
     "$WLEZ_ID" "$USER" "$HOLD_W" "$LDEX_WLEZ_FUND" >&2 || \
-  echo "   (wrap failed — user may have insufficient native balance)" >&2
+  echo "   (wrap failed - user may have insufficient native balance)" >&2
 sleep 14
 
-# 5. RFP Func #8 (WLEZ side) — create + fund USER's WLEZ ATA so
+# 5. RFP Func #8 (WLEZ side) - create + fund USER's WLEZ ATA so
 #    WLEZ-paired ATA flows (pool create / swap_exact_in_ata against
 #    a TOKEN/WLEZ pair) have a populated source ATA.
 ATA_W=$(E2E ataid x x "$ATA_ID" "$USER" "$WLEZ_DEF_HEX" 2>/dev/null | head -1)
@@ -304,7 +304,7 @@ fi
 
 # ── Seed a default pool ─────────────────────────────────────────────
 # Without this, a fresh-bootstrap user opens the mini-app's Pools tab and
-# sees "No pools exist yet" — every swap then fails with `{exists:false}`.
+# sees "No pools exist yet" - every swap then fails with `{exists:false}`.
 # Seed TOKENA/TOKENB at fee=5 from HOLD_A/HOLD_B so the first launch has
 # a working market. Skippable via LDEX_SKIP_POOL_SEED=1 (CI / re-runs).
 #
@@ -328,10 +328,10 @@ if [ "${LDEX_SKIP_POOL_SEED:-0}" != "1" ]; then
         "${HOLD[B]}" \
         "$SEED_POOL_AMOUNT" \
         "$SEED_POOL_FEE" 2>&1 | tail -1 >&2 || \
-      echo "   (pool seed failed — first-launch UI will show empty pools)" >&2
+      echo "   (pool seed failed - first-launch UI will show empty pools)" >&2
     sleep 5
   else
-    echo "   (skipping pool seed — e2e_testnet binary not built at $E2E_BIN)" >&2
+    echo "   (skipping pool seed - e2e_testnet binary not built at $E2E_BIN)" >&2
   fi
 fi
 

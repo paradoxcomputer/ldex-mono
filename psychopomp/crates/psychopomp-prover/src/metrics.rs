@@ -1,4 +1,4 @@
-//! Prometheus-text-format metrics for `/v0/metrics`. Tiny by design — one
+//! Prometheus-text-format metrics for `/v0/metrics`. Tiny by design - one
 //! `AtomicU64` per counter. Mirrors what the README §"Reputation" section
 //! says belongs on-chain in Phase-1, but exposed locally for now.
 

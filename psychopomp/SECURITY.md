@@ -2,7 +2,7 @@
 
 Psychopomp is the privacy-preserving outsourced-proving layer for LDEX on the
 Logos Execution Zone. The whole point of the project is to make a class of
-attacks expensive — so if you find one that isn't expensive, we want to know.
+attacks expensive - so if you find one that isn't expensive, we want to know.
 
 ## Reporting a vulnerability
 
@@ -11,7 +11,7 @@ Please **do not** open a public GitHub issue for a security report. Instead:
 - Email the maintainers at the address listed in the repo's GitHub profile
   (or use GitHub's private "Report a vulnerability" flow under
   *Security* → *Report a vulnerability*).
-- Include enough detail to reproduce — minimally a description of the attack,
+- Include enough detail to reproduce - minimally a description of the attack,
   the affected component, and a proof-of-concept if you have one.
 
 We will acknowledge within 72 hours and aim to have a fix or mitigation plan
@@ -23,9 +23,9 @@ deployed.
 
 In scope:
 
-- The Phase-0 prover daemon (`psychopomp-prover`) — wire layer, attestation
+- The Phase-0 prover daemon (`psychopomp-prover`) - wire layer, attestation
   binding, AEAD over witness, ELF cache, policy enforcement.
-- The client SDK (`psychopomp-client`) — attestation verification, route
+- The client SDK (`psychopomp-client`) - attestation verification, route
   selection, receipt verification.
 - The on-chain registry / escrow state machines and bridge crates
   (`Phase1-onchain/*-core`, `Phase1-onchain/*-program`).
@@ -33,7 +33,7 @@ In scope:
 Out of scope, but worth noting in context:
 
 - The current `StubAttestor` is intentionally trust-on-first-use. Phase-0
-  documentation calls this out — see [BUILD.md](BUILD.md) > "Limitations".
+  documentation calls this out - see [BUILD.md](BUILD.md) > "Limitations".
 - Vulnerabilities in upstream RISC Zero, the Logos Execution Zone, or any
   hardware TEE attestation chain belong upstream. Please report to the
   respective project; we will track downstream impact.

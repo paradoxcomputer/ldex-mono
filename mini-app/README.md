@@ -1,6 +1,6 @@
 # LDEX mini-app (Basecamp)
 
-Privacy-preserving DEX on LEZ — Basecamp mini-app. Two components, as the
+Privacy-preserving DEX on LEZ - Basecamp mini-app. Two components, as the
 verified Basecamp architecture requires:
 
 | Dir | Logos type | Runs | Role |
@@ -11,20 +11,20 @@ verified Basecamp architecture requires:
 Sandboxed QML cannot run native code, so the prover/sequencer work lives in
 `core/`; the UI only renders and dispatches calls.
 
-## Build / run (Nix; no git required — dirs have no `.git`)
+## Build / run (Nix; no git required - dirs have no `.git`)
 
 ```bash
 # core module (compiles C++ against the Logos SDK)
 cd core && nix build .#default
 
-# UI app — launches in logos-standalone-app (dev runner)
+# UI app - launches in logos-standalone-app (dev runner)
 cd ui && nix run .
 ```
 
 `logos-module-builder` is **experimental** ("do not use" upstream) but is the
 only supported build path; expect rough edges.
 
-## Status (walking skeleton — task #9)
+## Status (walking skeleton - task #9)
 
 - `core/`: minimal `core` module exposing `ping(msg)` and `getStatus()`
   (mirrors `logos-module-builder` `minimal-module`). No `wallet-ffi` yet.
@@ -38,5 +38,5 @@ only supported build path; expect rough edges.
    so the QML buttons actually round-trip to the native module in Basecamp.
 2. Add `wallet-ffi` to `core/` as an external library (risc0 `prove`),
    connect to a local standalone LEZ sequencer, and perform one real op
-   (account balance / public swap) — proving the full UI → native → chain
+   (account balance / public swap) - proving the full UI → native → chain
    seam before layering AMM + the deshield→swap→reshield privacy path.

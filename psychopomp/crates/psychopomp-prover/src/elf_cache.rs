@@ -3,7 +3,7 @@
 //! `HEAD /v0/elf/{hex}` and upload via `POST /v0/elf/{hex}`.
 //!
 //! Verification: on upload we recompute the image_id from the ELF and reject
-//! mismatches — the operator never trusts the client's claim that "this is
+//! mismatches - the operator never trusts the client's claim that "this is
 //! image_id X."
 
 use risc0_zkvm::compute_image_id;

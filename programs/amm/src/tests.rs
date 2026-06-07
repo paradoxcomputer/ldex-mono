@@ -1074,7 +1074,7 @@ impl AccountWithMetadataForTests {
                     reserve_a: BalanceForTests::vault_a_swap_test_1(),
                     reserve_b: BalanceForTests::vault_b_swap_test_1(),
                     fees: BalanceForTests::fee_tier(),
-                    // RFP Usability #3 — on-chain aggregate accumulators
+                    // RFP Usability #3 - on-chain aggregate accumulators
                     // (amm/src/swap.rs::create_swap_post_states). A→B swap
                     // of `add_max_amount_a` tokens: cum_volume_a is the
                     // gross input; cum_volume_b is the output; fee taken
@@ -2851,7 +2851,7 @@ fn swap_exact_output_overflow_protection() {
         AccountWithMetadataForTests::user_holding_a(),
         AccountWithMetadataForTests::user_holding_b(),
         2, // exact_amount_out: small, valid (< reserve_b)
-        1, // max_amount_in: tiny — real deposit would be enormous, but
+        1, // max_amount_in: tiny - real deposit would be enormous, but
         // overflow wraps it to 0, making 0 <= 1 pass silently
         IdForTests::token_a_definition_id(),
     0i64,
@@ -3663,7 +3663,7 @@ fn test_swap_exact_output_rejects_user_holding_b_wrong_program() {
     );
 }
 
-/// RFP Reliability #1 — Pool state consistent under concurrent swaps.
+/// RFP Reliability #1 - Pool state consistent under concurrent swaps.
 ///
 /// The LEZ sequencer linearises transactions, so two "concurrent" swaps
 /// apply sequentially to the pool account. This stress test applies 200
@@ -3710,7 +3710,7 @@ fn stress_concurrent_swaps_preserve_invariant_and_balance() {
         let frac_bp = 50u128 + (rng() % 450) as u128; // 50..500 bp of r_in
         let swap_amount_in: u128 = (r_in * frac_bp / 10_000).max(50);
         // Pre-compute the AMM's exact output for this swap; if it would
-        // round to 0 (tiny reserves or extreme skew), skip — the AMM
+        // round to 0 (tiny reserves or extreme skew), skip - the AMM
         // correctly rejects zero-output swaps and this test is about the
         // invariant for the swaps that DO happen.
         let eff_in = swap_amount_in * (FEE_BPS_DENOMINATOR - fee_bps) / FEE_BPS_DENOMINATOR;
@@ -3823,7 +3823,7 @@ fn make_token_holding(
 // --- ATA-routed ops: fail-closed pin coverage (RFP Func #8) -----------------
 //
 // A keypair-created pool (NewDefinition) pins `ata_program_id` to the default
-// (zero) value, which no deployed ATA program can match — so the ATA-routed
+// (zero) value, which no deployed ATA program can match - so the ATA-routed
 // entrypoints must reject it rather than swap/add against a substitute (no-op)
 // ATA program that would skip the real input Transfer while still paying out.
 
@@ -3948,7 +3948,7 @@ fn test_new_definition_ata_pins_submitted_ata_program() {
     assert_eq!(pool_def.ata_program_id, ATA_PROGRAM_ID);
 
     // Everything else matches the keypair-only new_definition pool (same
-    // reserves / supply / ids / fee tier) — only the pin differs.
+    // reserves / supply / ids / fee tier) - only the pin differs.
     let pool_def_init = PoolDefinition::try_from(
         &AccountWithMetadataForTests::pool_definition_init().account.data,
     )
@@ -3971,7 +3971,7 @@ fn test_new_definition_ata_pins_submitted_ata_program() {
 }
 
 /// End-to-end of the fix: a pool created via `new_definition_ata` makes the
-/// previously-dead `swap_exact_input_ata` path reachable — the pin assert now
+/// previously-dead `swap_exact_input_ata` path reachable - the pin assert now
 /// passes for the matching ATA program and the swap produces its chained calls
 /// instead of panicking.
 #[test]

@@ -2,7 +2,7 @@
 //! `prove*` outcome. Used by `prove_multi` to rank routes by score.
 //!
 //! Score = α·success_rate − β·log10(avg_latency_ms+1) − γ·fail_rate
-//! defaults α=10, β=2, γ=5 — tuned so a route with 0 history (score = 0)
+//! defaults α=10, β=2, γ=5 - tuned so a route with 0 history (score = 0)
 //! beats a route with a 100% fail rate but loses to one with successes.
 
 use serde::{Deserialize, Serialize};

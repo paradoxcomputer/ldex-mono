@@ -1,4 +1,4 @@
-# `ldex` — command-line client for the LDEX privacy DEX
+# `ldex` - command-line client for the LDEX privacy DEX
 
 A single binary that exposes every mini-app feature behind the same FFI
 the QML uses. Bypass the GUI when it misbehaves; script flows that the UI
@@ -48,7 +48,7 @@ for any token argument.
 | `ldex wrap 1000` | native LEZ (USER_OWNER) → WLEZ (HOLD_W) |
 | `ldex unwrap 100` | WLEZ (HOLD_W) → native LEZ |
 
-### Shielding (real STARK, ~3–5 min each on CPU)
+### Shielding (real STARK, ~3-5 min each on CPU)
 
 | Command | Effect |
 |---|---|
@@ -61,10 +61,10 @@ for any token argument.
 # Public mode-0 ATA swap (~15 s):
 ldex swap A B 100
 
-# Private mode-1 PrivateOwned swap (~10–15 min STARK on CPU):
+# Private mode-1 PrivateOwned swap (~10-15 min STARK on CPU):
 ldex swap A B 100 --mode private
 
-# Disposable mode-2 fresh-A swap (~15–25 min STARK):
+# Disposable mode-2 fresh-A swap (~15-25 min STARK):
 ldex swap A B 100 --mode disposable
 
 # All modes accept --fee and --slip:
@@ -104,7 +104,7 @@ ldex liq add A B 5000 5000 -f 5 -m private # private add (STARK)
 ## End-to-end smoke (no UI)
 
 ```bash
-source scripts/bootstrap.env  # not required — CLI loads it — but useful for shell completions
+source scripts/bootstrap.env  # not required - CLI loads it - but useful for shell completions
 
 bash cli/run.sh status
 bash cli/run.sh balance
@@ -124,7 +124,7 @@ bash cli/run.sh balance
 Three reasons:
 
 1. **The UI has had bugs.** The CLI exercises the same FFI surface, so
-   it's the floor for "does the chain side work?" — useful while the
+   it's the floor for "does the chain side work?" - useful while the
    mini-app is being polished.
 2. **Scripting.** Pipe `ldex` calls into shell loops for stress tests,
    reproducible bench runs, or operator dashboards.
@@ -141,7 +141,7 @@ there is no behavioural drift between the two surfaces.
   sync the wallet to chain head first. Pass `--no-sync` to skip.
 - **Latency disclosure.** Private/Disposable swaps and shield/deshield
   generate real RISC-Zero STARKs. On a Ryzen 7 PRO 7840U (no GPU),
-  expect 3–5 min for shield/deshield, 10–15 min for mode-1, 15–25 min
+  expect 3-5 min for shield/deshield, 10-15 min for mode-1, 15-25 min
   for mode-2 / native-batched. Faster on a GPU prover; orthogonal work.
 - **Pool ordering.** Pools are keyed by `(defA, defB)` in a canonical
   order. The CLI probes both orderings so `pool A B` and `pool B A`

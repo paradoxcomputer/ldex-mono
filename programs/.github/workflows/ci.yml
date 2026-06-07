@@ -150,13 +150,13 @@ jobs:
             program=$(basename "$src" .rs)
             idl="artifacts/${program}-idl.json"
             if [ ! -f "$idl" ]; then
-              echo "Missing IDL for '${program}' — generate with: cargo run -p idl-gen -- ${src#./} > ${idl}"
+              echo "Missing IDL for '${program}' - generate with: cargo run -p idl-gen -- ${src#./} > ${idl}"
               failed=1
               continue
             fi
             ./target/release/idl-gen "$src" > /tmp/${program}-idl.json
             if ! diff "$idl" /tmp/${program}-idl.json > /dev/null 2>&1; then
-              echo "IDL for '${program}' is out of date — regenerate with: cargo run -p idl-gen -- ${src#./} > ${idl}"
+              echo "IDL for '${program}' is out of date - regenerate with: cargo run -p idl-gen -- ${src#./} > ${idl}"
               failed=1
             fi
           done

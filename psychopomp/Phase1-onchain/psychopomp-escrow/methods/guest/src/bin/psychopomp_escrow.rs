@@ -59,7 +59,7 @@ mod psychopomp_escrow {
         .map_err(|e| SpelError::custom(1, e.to_string()))?;
         // Construct the chained call's pre-state for the slot from the
         // parent's POST-state (the LEZ runtime expects chained pre-states
-        // to reflect the running diff — see lez-chained-call-prestate-semantics
+        // to reflect the running diff - see lez-chained-call-prestate-semantics
         // memory note). The slot now has program_owner=escrow + the JobState
         // data; auth-transfer will add max_bid to its balance.
         // Chained-call pre-state: the runtime applies our post-state's data
@@ -149,14 +149,14 @@ mod psychopomp_escrow {
     /// Anyone can fault a deadline-missed or proof-rejected job. Chains
     /// `record_settlement(success=false, fault_kind=reason)` to the registry
     /// so the operator's fault counter increments. Uses the operator_pk
-    /// captured from the prior Awarded state — no need for the caller to
+    /// captured from the prior Awarded state - no need for the caller to
     /// supply it.
     ///
     /// `claimed_epoch_now` is the caller's claim of the current chain epoch
     /// (used by the bridge to enforce the `deadline_epoch` check for
     /// Liveness faults). Phase-2 will replace this with a CLOCK_01 read
     /// (same pattern LDEX's AMM uses). Until then, a hostile caller could
-    /// submit a fake epoch — but the worst they can do is fault a job they
+    /// submit a fake epoch - but the worst they can do is fault a job they
     /// could have faulted later anyway, so the practical risk is low.
     #[instruction]
     pub fn fault(

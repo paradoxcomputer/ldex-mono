@@ -163,7 +163,7 @@ pub enum EscrowError {
 }
 
 /// Apply one instruction to a job slot. Returns (new state, balance delta
-/// instructions) — the LEZ wrapper applies the balance deltas to client and
+/// instructions) - the LEZ wrapper applies the balance deltas to client and
 /// operator accounts. None means delete the slot.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BalanceDelta {
@@ -173,7 +173,7 @@ pub enum BalanceDelta {
     Refund { to_pk: [u8; 32], amount: u128 },
     /// Pay operator the bid amount from escrow.
     Pay { to_pk: [u8; 32], amount: u128 },
-    /// Slash operator's locked per-job stake — split per `burn_bps`.
+    /// Slash operator's locked per-job stake - split per `burn_bps`.
     Slash { operator_pk: [u8; 32], amount: u128, burn_bps: u16 },
     /// Lock operator's per-job stake from their bond.
     LockOperatorStake { operator_pk: [u8; 32], amount: u128 },

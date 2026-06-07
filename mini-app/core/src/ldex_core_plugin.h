@@ -91,8 +91,8 @@ public:
     // return "job=N" immediately so the Logos host's QtRO 20-second
     // bridge timeout never fires. UI polls jobStatus(N). Without these,
     // every shield / deshield / pool-create attempt cascades into
-    // "Failed to invoke callRemoteMethod / invalid response" — the
-    // STARK proof + chain wait take 3–5 min, the bridge gives up at 20 s.
+    // "Failed to invoke callRemoteMethod / invalid response" - the
+    // STARK proof + chain wait take 3-5 min, the bridge gives up at 20 s.
     Q_INVOKABLE QString shieldTokenStart(const QString& letter,
                                          const QString& amount);
     Q_INVOKABLE QString deshieldTokenStart(const QString& letter,

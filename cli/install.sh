@@ -7,7 +7,7 @@
 #
 # The binary is self-contained: build.rs bakes an absolute RUNPATH
 # pointing at `<repo>/mini-app/core/lib`, so the dynamic linker resolves
-# libldex_amm_ffi.so + libwallet_ffi.so automatically — no
+# libldex_amm_ffi.so + libwallet_ffi.so automatically - no
 # LD_LIBRARY_PATH required at runtime. Move the repo and you must
 # re-run this script so the rpath is updated.
 set -euo pipefail

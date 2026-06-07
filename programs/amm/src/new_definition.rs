@@ -12,7 +12,7 @@ use nssa_core::{
 };
 use token_core::TokenDefinition;
 
-/// Initializes a new Pool with a keypair-only user side — no ATA program is
+/// Initializes a new Pool with a keypair-only user side - no ATA program is
 /// pinned, so the pool's ATA-routed ops are fail-closed (rejected). For an
 /// ATA-routable pool use [`new_definition_ata`].
 #[expect(clippy::too_many_arguments, reason = "TODO: Fix later")]
@@ -193,7 +193,7 @@ fn new_definition_impl(
         reserve_b: token_b_amount.into(),
         fees,
         // Pinned at pool creation. `new_definition` (NewDefinition) passes a
-        // default/zero pin — a keypair-only pool whose ATA-routed ops are
+        // default/zero pin - a keypair-only pool whose ATA-routed ops are
         // fail-closed (rejected). `new_definition_ata` (NewDefinitionAta)
         // passes the submitter-supplied ATA program so those ops can match.
         ata_program_id,
@@ -203,7 +203,7 @@ fn new_definition_impl(
         price_b_cum_last: 0,
         block_ts_last: clock_ts,
         obs: Vec::new(),
-        // Lifetime aggregate counters (RFP Usability #3) — start at zero.
+        // Lifetime aggregate counters (RFP Usability #3) - start at zero.
         cum_volume_a: 0,
         cum_volume_b: 0,
         cum_fees_a: 0,

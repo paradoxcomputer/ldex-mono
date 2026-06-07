@@ -1,7 +1,7 @@
-# `programs/` — LDEX on-chain programs (fork provenance)
+# `programs/` - LDEX on-chain programs (fork provenance)
 
 This directory is a **fork of the Logos LEZ programs workspace**, vendored
-into the project tree (no `.git` — the project is intentionally git-free;
+into the project tree (no `.git` - the project is intentionally git-free;
 build artifacts excluded).
 
 ## Upstream
@@ -25,16 +25,16 @@ immutability, and Uniswap-V2 fee→LP accrual in `swap.rs`.
 The one RFP gap closed here: **the fee tier was not part of the pool PDA**,
 so only one pool per token pair could exist. Changes:
 
-- `amm/core/src/lib.rs` — `compute_pool_pda` / `compute_pool_pda_seed` take
+- `amm/core/src/lib.rs` - `compute_pool_pda` / `compute_pool_pda_seed` take
   `fees`; seed = `sha256(token_1 ‖ token_2 ‖ fees_le)` (80 bytes). Each
   `(pair, fee tier)` → distinct pool; vault/LP/lock PDAs derive from the
   pool PDA so they inherit the tier automatically.
-- `amm/src/new_definition.rs` — pass `fees` into the pool PDA + the
+- `amm/src/new_definition.rs` - pass `fees` into the pool PDA + the
   production `Claim::Pda` authorization; validate the fee tier *before* the
   PDA assertion (clearer rejection of unsupported tiers).
-- `amm/src/tests.rs` — per-tier id rebinding; new
+- `amm/src/tests.rs` - per-tier id rebinding; new
   `test_pool_pda_distinct_per_fee_tier_for_same_pair` (coexistence).
-- `integration_tests/tests/amm.rs` — per-tier message in the all-tiers e2e
+- `integration_tests/tests/amm.rs` - per-tier message in the all-tiers e2e
   test.
 
 ## Build / test (from this directory)

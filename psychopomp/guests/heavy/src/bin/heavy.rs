@@ -1,7 +1,7 @@
 //! Synthetic heavy RISC0 guest. Reads (rounds: u32, seed: u32), iterates
 //! `rounds` rounds of SHA-256 over a 32-byte state initialised from the seed,
 //! commits (rounds, final_digest). Each round is one sha2::Sha256 hash of 32
-//! bytes — ~24K RISC0 cycles in software, no accelerator. The workload scales
+//! bytes - ~24K RISC0 cycles in software, no accelerator. The workload scales
 //! linearly with `rounds`, so the host can dial it to a target wall-clock.
 //!
 //! Purpose: produce a non-trivial proving job so a GPU prover's speedup over

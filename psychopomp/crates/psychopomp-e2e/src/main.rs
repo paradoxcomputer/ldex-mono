@@ -67,7 +67,7 @@ struct Args {
     registry: Option<std::path::PathBuf>,
 
     /// `--test heavy`: number of SHA-256 rounds the guest executes. Tune to
-    /// hit a target wall-clock — e.g. ~1000 ≈ a few seconds CPU baseline,
+    /// hit a target wall-clock - e.g. ~1000 ≈ a few seconds CPU baseline,
     /// ~100_000 ≈ minutes on CPU but seconds on a real GPU prover.
     #[arg(long, default_value_t = 1000)]
     rounds: u32,

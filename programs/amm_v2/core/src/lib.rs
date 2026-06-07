@@ -5,7 +5,7 @@
 //! `DisposableSwapNativeIn/Out`) that inline the orchestration the
 //! `private_swap_router` does today. Pools created under amm_v2 are
 //! amm_v2-owned (separate PDA space from the canonical AMM). Receipts
-//! verify under upstream `PRIVACY_PRESERVING_CIRCUIT_ID` — amm_v2 is a
+//! verify under upstream `PRIVACY_PRESERVING_CIRCUIT_ID` - amm_v2 is a
 //! regular LEZ program called as a chained-call dependency by the
 //! upstream privacy circuit, so no sequencer/nssa changes are needed.
 //! Testnet-compatible.
@@ -13,7 +13,7 @@
 //! Pool layout reuses `amm_core::PoolDefinition` verbatim; the only
 //! semantic difference vs canonical amm is that amm_v2 pools skip the
 //! on-chain TWAP oracle on the *circuit* swap variant
-//! (`SwapExactInputCircuit`) — that keeps the privacy proof's pre-state
+//! (`SwapExactInputCircuit`) - that keeps the privacy proof's pre-state
 //! set drift-free on slow CPU provers (no Clock account in the account
 //! list). The public `SwapExactInput` variant still updates the oracle
 //! (mode-0 public swaps benefit from price history).
@@ -67,7 +67,7 @@ pub enum Instruction {
     },
 
     /// **Mode-1 PRIVATE (PrivateOwned) swap.** No oracle update (no
-    /// Clock account in the account list) — drift-free pre-state set
+    /// Clock account in the account list) - drift-free pre-state set
     /// for slow CPU privacy proofs. Same shape as
     /// `amm_core::Instruction::SwapExactInputCircuit`.
     SwapExactInputCircuit {
@@ -110,7 +110,7 @@ pub enum Instruction {
         deadline: u64,
     },
 
-    /// **RFP Func #8** — mode-0 public swap with the user side using
+    /// **RFP Func #8** - mode-0 public swap with the user side using
     /// Associated Token Accounts. Owner authorises the spend (signer);
     /// the chained `ata::Transfer` PDA-authorises the sender ATA.
     /// Same shape as `amm_core::Instruction::SwapExactInputAta`.
@@ -122,7 +122,7 @@ pub enum Instruction {
         deadline: u64,
     },
 
-    /// **RFP Func #8** — mode-0 public exact-output swap via ATAs.
+    /// **RFP Func #8** - mode-0 public exact-output swap via ATAs.
     SwapExactOutputAta {
         exact_amount_out: u128,
         max_amount_in: u128,
@@ -131,7 +131,7 @@ pub enum Instruction {
         deadline: u64,
     },
 
-    /// **RFP Func #8** — add liquidity with the user side using ATAs.
+    /// **RFP Func #8** - add liquidity with the user side using ATAs.
     AddLiquidityAta {
         min_amount_liquidity: u128,
         max_amount_to_add_token_a: u128,
@@ -140,7 +140,7 @@ pub enum Instruction {
         deadline: u64,
     },
 
-    /// **RFP Func #8** — create a new amm_v2 pool with user-side ATAs.
+    /// **RFP Func #8** - create a new amm_v2 pool with user-side ATAs.
     /// Chains 2× `ata::Transfer` (owner → vault) for deposits,
     /// `token::NewFungibleDefinition` for the LP, and `token::Mint`
     /// to seed `ata_lp = ata(owner, lp_def)` with the initial LP
@@ -156,7 +156,7 @@ pub enum Instruction {
         deadline: u64,
     },
 
-    /// **RFP Func #8** — remove liquidity with the user side using ATAs.
+    /// **RFP Func #8** - remove liquidity with the user side using ATAs.
     /// Chains: 1× `ata::Burn` to drain `ata_lp`, 2× `token::Transfer`
     /// (vault → ATA with vault PDA-auth) to return the underlying tokens.
     ///

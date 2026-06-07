@@ -1,6 +1,6 @@
 //! Composed guest. Reads HELLO_ID + the expected (sum, prod) journal of an
-//! inner hello receipt, calls env::verify(HELLO_ID, expected_journal) — which
-//! consumes one assumption from the env's assumption pool — and commits the
+//! inner hello receipt, calls env::verify(HELLO_ID, expected_journal) - which
+//! consumes one assumption from the env's assumption pool - and commits the
 //! pair plus a "ok" marker. Proves the assumption-pass-through path end-to-end.
 
 #![no_main]

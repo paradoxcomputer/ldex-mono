@@ -1,7 +1,7 @@
 //! C-ABI shim exposing the LDEX (fee-tier) AMM to the native `ldex_core`
 //! Basecamp module.
 //!
-//! Step #15.1 — foundational slice: pure, fee-tier-aware PDA derivations
+//! Step #15.1 - foundational slice: pure, fee-tier-aware PDA derivations
 //! using *our* forked `amm_core` (`programs/amm`), proving the dependency
 //! graph (our `amm_core` + rc3 `nssa` types) links as a `cdylib` over the C
 //! ABI. Signed-submit ops (new_pool / swap / add / remove liquidity) build
@@ -92,7 +92,7 @@ pub(crate) fn program_id_from_bytes(b: [u8; 32]) -> ProgramId {
     pid
 }
 
-/// Pool PDA for `(token_a, token_b, fee_tier)` — distinct per fee tier so
+/// Pool PDA for `(token_a, token_b, fee_tier)` - distinct per fee tier so
 /// pools for the same pair coexist (RFP-004 Func #6).
 ///
 /// # Safety
@@ -182,7 +182,7 @@ pub unsafe extern "C" fn ldex_amm_lp_lock_id(
 }
 
 /// Deterministic Associated Token Account id for `(owner, mint)`
-/// (RFP-004 Func #8). Pure — `for_public_pda(ata_pid,
+/// (RFP-004 Func #8). Pure - `for_public_pda(ata_pid,
 /// sha256(owner ‖ mint))`. Any integrator can recompute a user's token
 /// holding address from just the owner and the token definition.
 ///
@@ -210,7 +210,7 @@ pub unsafe extern "C" fn ldex_ata_id(
 /// Parse an account/program id string into 32 bytes. Accepts the forms ids
 /// actually appear in: `Public/<base58>`, `Private/<base58>`, bare
 /// `<base58>`, or 64-char hex. Lets the UI pass exactly what's in
-/// `bootstrap.env` / wallet output — no manual hex conversion.
+/// `bootstrap.env` / wallet output - no manual hex conversion.
 ///
 /// # Safety
 /// `s` is a NUL-terminated UTF-8 string; `out` points to 32 writable bytes.

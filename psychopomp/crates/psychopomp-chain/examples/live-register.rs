@@ -18,7 +18,7 @@ use std::time::Duration;
 const ENDPOINT: &str = "http://127.0.0.1:3050/";
 const REGISTRY_IMAGE_ID_HEX: &str =
     "b934f143c4cd591a83d896d8d7afced317d7a466240deeec02a7cad8c6ecde1c";
-// Operator pubkey to register (just an example — any 32 bytes).
+// Operator pubkey to register (just an example - any 32 bytes).
 const OPERATOR_PK: [u8; 32] = [0xaa; 32];
 const ATTEST_ROOT: [u8; 32] = [0xbb; 32];
 
@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Wallet config: load from environment. Pin the funder account.
-    // Defaults are repo-relative — run `cargo run -p psychopomp-chain
+    // Defaults are repo-relative - run `cargo run -p psychopomp-chain
     // --example live-register` from the repo root.
     let cfg_path = std::env::var("PSYCHOPOMP_WALLET_CFG")
         .unwrap_or_else(|_| "sequencer-state/wallet/wallet_config.json".into());
@@ -42,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "sequencer-state/wallet/storage.json".into());
     let funder_str = std::env::var("PSYCHOPOMP_FUNDER")
         .unwrap_or_else(|_| "6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV".into());
-    // Strip optional "Public/" or "Private/" prefix — AccountId::parse expects raw base58.
+    // Strip optional "Public/" or "Private/" prefix - AccountId::parse expects raw base58.
     let raw = funder_str.split('/').next_back().unwrap_or(&funder_str);
     let funder = parse_account_id(raw)?;
 

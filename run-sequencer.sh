@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run a local LEZ sequencer in standalone mode (no Bedrock/Indexer).
-# Listens on 127.0.0.1:3040 — the address the mini-app's wallet config uses.
+# Listens on 127.0.0.1:3040 - the address the mini-app's wallet config uses.
 # Genesis accounts are pre-funded (no faucet needed for local dev).
 #
 # Leave this running in its own terminal while you use the mini-app's
@@ -25,5 +25,5 @@ if [ ! -x "$BIN" ]; then
   cargo build --features standalone -p sequencer_service --release
 fi
 
-echo ">> Starting sequencer (standalone) on 127.0.0.1:3040 — Ctrl-C to stop"
+echo ">> Starting sequencer (standalone) on 127.0.0.1:3040 - Ctrl-C to stop"
 exec "$BIN" "$CFG"

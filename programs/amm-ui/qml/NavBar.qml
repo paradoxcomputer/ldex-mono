@@ -1,7 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
 
-// Self-contained navigation bar — styling is independent of any view's theme.
+// Self-contained navigation bar - styling is independent of any view's theme.
 // Use currentIndex to read the active tab; tabChanged(index) fires on selection.
 Item {
     id: root

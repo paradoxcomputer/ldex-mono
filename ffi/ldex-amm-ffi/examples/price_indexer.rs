@@ -1,11 +1,11 @@
-//! LDEX price-indexer microservice — design.md §5.11 layer ②.
+//! LDEX price-indexer microservice - design.md §5.11 layer ②.
 //!
 //! Solves the chart's "historical depth" gap: instead of an in-memory
 //! ≤15-min session buffer that resets every view, this daemon tails the
 //! chain and **persists** the pool's on-chain reserves per new block to a
 //! durable CSV, giving a real, unbounded, restart-surviving price
 //! history. Data is 100% on-chain (the pool PDA's `PoolDefinition`
-//! reserves read from the live sequencer) — no oracle, no third party.
+//! reserves read from the live sequencer) - no oracle, no third party.
 //!
 //!   price_indexer <cfg> <store> <amm> <defA> <defB> <fee> [interval_s]
 //!

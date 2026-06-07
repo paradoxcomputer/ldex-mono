@@ -1,4 +1,4 @@
-//! Wrapped LEZ (WLEZ) — shared types.
+//! Wrapped LEZ (WLEZ) - shared types.
 //!
 //! The WLEZ program wraps the native LEZ gas token 1:1 into an SPL-style
 //! token holding (the "WLEZ" token), so the AMM (which only speaks the
@@ -53,12 +53,12 @@ pub enum Instruction {
     /// the user's holding.
     ///
     /// Required accounts (4), in order:
-    ///   0. `user_native` — the user's keypair public account (signs)
-    ///   1. `vault` — the WLEZ vault PDA
-    ///   2. `definition` — the WLEZ token definition PDA. Mint
+    ///   0. `user_native` - the user's keypair public account (signs)
+    ///   1. `vault` - the WLEZ vault PDA
+    ///   2. `definition` - the WLEZ token definition PDA. Mint
     ///      authority is set to this program via `with_pda_seeds` on
     ///      the chained Mint.
-    ///   3. `user_holding` — the user's WLEZ token holding. Must
+    ///   3. `user_holding` - the user's WLEZ token holding. Must
     ///      already be initialised for the WLEZ def.
     Wrap { amount: u128 },
 
@@ -66,12 +66,12 @@ pub enum Instruction {
     /// native LEZ from the vault back to the user.
     ///
     /// Required accounts (4), in order:
-    ///   0. `user_holding` — the user's WLEZ token holding. Signs the
+    ///   0. `user_holding` - the user's WLEZ token holding. Signs the
     ///      burn via the user's tx authority.
-    ///   1. `definition` — the WLEZ token definition.
-    ///   2. `vault` — the WLEZ vault PDA. Authorised in the chained
+    ///   1. `definition` - the WLEZ token definition.
+    ///   2. `vault` - the WLEZ vault PDA. Authorised in the chained
     ///      native transfer via `with_pda_seeds`.
-    ///   3. `user_native` — the destination native account.
+    ///   3. `user_native` - the destination native account.
     Unwrap { amount: u128 },
 }
 
@@ -113,7 +113,7 @@ pub fn get_wlez_definition_id(wlez_program_id: &ProgramId) -> AccountId {
 
 /// PDA seed for the init-holding account that `Initialize` claims along
 /// with the definition (the holding required by `token::NewFungibleDefinition`
-/// for the initial supply, which is 0 for WLEZ — the holding stays
+/// for the initial supply, which is 0 for WLEZ - the holding stays
 /// untouched after Initialize).
 pub fn compute_wlez_init_holding_seed() -> PdaSeed {
     use risc0_zkvm::sha::{Impl, Sha256};
@@ -130,6 +130,6 @@ pub fn get_wlez_init_holding_id(wlez_program_id: &ProgramId) -> AccountId {
     AccountId::for_public_pda(wlez_program_id, &compute_wlez_init_holding_seed())
 }
 
-/// Default WLEZ token symbol — used in the `token::NewDefinition` call
+/// Default WLEZ token symbol - used in the `token::NewDefinition` call
 /// inside `Initialize`. Kept short so the symbol fits in a UI chip.
 pub const WLEZ_NAME: &str = "WLEZ";

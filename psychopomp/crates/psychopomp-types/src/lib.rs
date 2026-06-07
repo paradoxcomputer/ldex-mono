@@ -39,7 +39,7 @@ pub struct AttestationDoc {
     pub vendor_chain: Vec<Vec<u8>>,
     /// Operator's current load advertisement. Clients ranking by latency can
     /// use this as a freshness signal beyond their own reputation ledger.
-    /// Fields default to zero — not covered by the signature for backward
+    /// Fields default to zero - not covered by the signature for backward
     /// compatibility with older readers.
     #[serde(default)]
     pub queue_depth: u32,
@@ -65,8 +65,8 @@ impl AttestationDoc {
 
 /// Reference to the guest ELF to prove against.
 ///
-/// - `InlineBytes` — full ELF in the request. Fine for small (<200 KB) guests.
-/// - `Cached` — operator looks up the ELF in its `/v0/elf` cache, keyed by
+/// - `InlineBytes` - full ELF in the request. Fine for small (<200 KB) guests.
+/// - `Cached` - operator looks up the ELF in its `/v0/elf` cache, keyed by
 ///   `JobRequest::image_id`. Client should probe `HEAD /v0/elf/{image_id_hex}`
 ///   first and upload via `POST /v0/elf` on a miss.
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -243,7 +243,7 @@ pub struct JobAccepted {
 
 /// First half of commit-reveal: client posts everything except the witness
 /// ciphertext (it sends only `ciphertext_hash`). Operator awards the job to
-/// itself before seeing the ciphertext — see README §"MEV / front-running >
+/// itself before seeing the ciphertext - see README §"MEV / front-running >
 /// Commit-reveal cipher delivery".
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JobPrecommit {
@@ -283,7 +283,7 @@ impl JobPrecommit {
 }
 
 /// Operator's response to `JobPrecommit`. Contains an ed25519 signature by
-/// the attestation root over `(precommit fields, job_id, accepted_at)` — the
+/// the attestation root over `(precommit fields, job_id, accepted_at)` - the
 /// operator commits to running this exact job with this exact ciphertext_hash
 /// BEFORE they see the ciphertext, so they can't peek-then-rebid.
 #[derive(Clone, Debug, Serialize, Deserialize)]

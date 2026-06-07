@@ -12,7 +12,7 @@ mod private_swap_router {
     use super::*;
 
     /// Atomic deshield → public AMM swap → re-shield. No CLOCK_01 in
-    /// the account list — the chained AMM call uses
+    /// the account list - the chained AMM call uses
     /// `SwapExactInputCircuit` which skips the TWAP oracle update, so
     /// the privacy proof's pre-state set is drift-free and a slow CPU
     /// proof verifies cleanly. See `amm_core::Instruction::
@@ -70,7 +70,7 @@ mod private_swap_router {
         vault_a: AccountWithMetadata,
         vault_b: AccountWithMetadata,
         user_holding_out: AccountWithMetadata,
-        // No clock — chained AMM uses SwapExactInputCircuit; the
+        // No clock - chained AMM uses SwapExactInputCircuit; the
         // proof's pre-state set stays drift-free.
         swap_amount_in: u128,
         min_amount_out: u128,
@@ -114,7 +114,7 @@ mod private_swap_router {
         wlez_definition: AccountWithMetadata,
         wlez_vault: AccountWithMetadata,
         user_native: AccountWithMetadata,
-        // No clock — chained AMM uses SwapExactInputCircuit.
+        // No clock - chained AMM uses SwapExactInputCircuit.
         swap_amount_in: u128,
         min_amount_out: u128,
         token_definition_id_in: AccountId,

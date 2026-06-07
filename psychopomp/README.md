@@ -14,13 +14,13 @@ cd psychopomp
 ./scripts/bootstrap-dev.sh        # installs Rust + RISC Zero toolchain, builds, tests
 ```
 
-The bootstrap script is idempotent — re-running on a working setup is just a
+The bootstrap script is idempotent - re-running on a working setup is just a
 build + test pass. It deliberately skips the Phase-1 on-chain LEZ guest ELFs
-(those need `docker buildx` and a separate LEZ checkout — see [BUILD.md](BUILD.md)).
+(those need `docker buildx` and a separate LEZ checkout - see [BUILD.md](BUILD.md)).
 
 What you have after bootstrap:
-- `target/release/psychopomp-prover` — the operator daemon (axum HTTP + RISC0).
-- `target/release/psychopomp-e2e` — the client-side end-to-end harness.
+- `target/release/psychopomp-prover` - the operator daemon (axum HTTP + RISC0).
+- `target/release/psychopomp-e2e` - the client-side end-to-end harness.
 - 41 passing unit tests across 10 Phase-0 + state-machine crates.
 - A dev-mode e2e pass against a localhost prover.
 
@@ -48,21 +48,21 @@ See [BUILD.md](BUILD.md) for the full GPU recipe.
 
 
 
-A decentralised marketplace of TEE-attested GPU provers that generate zk-STARK receipts on a user's behalf *without ever exposing the unsealed witness*. The on-chain artifact is the standard RISC Zero STARK — verifiable by any LEZ node with no trust in the prover. The off-chain confidentiality property is enforced by hardware attestation. The economic layer (registration, escrow, slashing, rewards) lives as a small set of LEZ programs.
+A decentralised marketplace of TEE-attested GPU provers that generate zk-STARK receipts on a user's behalf *without ever exposing the unsealed witness*. The on-chain artifact is the standard RISC Zero STARK - verifiable by any LEZ node with no trust in the prover. The off-chain confidentiality property is enforced by hardware attestation. The economic layer (registration, escrow, slashing, rewards) lives as a small set of LEZ programs.
 
-The first client is [LDEX](../ldex), whose private-swap path needs ~10–21 min of CPU STARK generation per swap on a Ryzen-class laptop. Psychopomp targets ~1–2 min wall-clock on an H100-class GPU enclave while preserving the privacy property that the chain otherwise guarantees.
+The first client is [LDEX](../ldex), whose private-swap path needs ~10-21 min of CPU STARK generation per swap on a Ryzen-class laptop. Psychopomp targets ~1-2 min wall-clock on an H100-class GPU enclave while preserving the privacy property that the chain otherwise guarantees.
 
 ---
 
 ## Why not Boundless / Bonsai alone
 
-Vanilla outsourced proving (e.g. the RISC Zero Bonsai network, the Boundless prover marketplace) is **privacy-breaking for LDEX**. The privacy circuit's witness contains PrivateOwned balances, nullifier secrets, the unshielded swap amounts, and the wallet's viewing keys. The on-chain receipt reveals none of that — but to *generate* the receipt, you have to hand the prover the raw witness. A third-party prover with no enclave sees everything the chain hides. The privacy property collapses to "trust the prover not to log, leak, or be subpoenaed" — a custodial model dressed as zk.
+Vanilla outsourced proving (e.g. the RISC Zero Bonsai network, the Boundless prover marketplace) is **privacy-breaking for LDEX**. The privacy circuit's witness contains PrivateOwned balances, nullifier secrets, the unshielded swap amounts, and the wallet's viewing keys. The on-chain receipt reveals none of that - but to *generate* the receipt, you have to hand the prover the raw witness. A third-party prover with no enclave sees everything the chain hides. The privacy property collapses to "trust the prover not to log, leak, or be subpoenaed" - a custodial model dressed as zk.
 
 Psychopomp's bet: outsourced proving for a privacy chain only makes sense if the prover runs inside a TEE-attested enclave. That's the gap.
 
 ## Why not TEE alone
 
-A TEE-only prover (no zk on the output) would mean the LEZ verifier trusts the hardware attestation directly. That collapses to "trust the hardware vendor + firmware" — a worse trust model than zk on every dimension that matters at chain layer (correctness, censorship resistance, decentralisation).
+A TEE-only prover (no zk on the output) would mean the LEZ verifier trusts the hardware attestation directly. That collapses to "trust the hardware vendor + firmware" - a worse trust model than zk on every dimension that matters at chain layer (correctness, censorship resistance, decentralisation).
 
 **Psychopomp uses both. Each layer protects a different thing:**
 
@@ -111,7 +111,7 @@ A TEE compromise in the Psychopomp design leaks one user's secrets but cannot co
                          │  STARK locally          │                          │
                          │                         │                          │
                          │ 6) Submit STARK to LEZ  │                          │
-                         │  (standard receipt —    │                          │
+                         │  (standard receipt -    │                          │
                          │   chain doesn't know it │                          │
                          │   was outsourced)       │                          │
                          │                         │                          │
@@ -138,7 +138,7 @@ Three properties of the composition:
 
 ## Components
 
-### `psychopomp-prover` — enclave-side binary
+### `psychopomp-prover` - enclave-side binary
 
 The deterministically reproducible binary that runs inside the TEE-attested enclave. Open source. The compiled measurement (`MRENCLAVE`) is published on-chain in the operator registry and re-derivable by anyone from the source.
 
@@ -148,7 +148,7 @@ Responsibilities:
 - Drive the RISC0 CUDA prover.
 - Emit `{STARK receipt, attestation document}` and tear down the ephemeral key.
 
-### `psychopomp-client` — wallet-side SDK
+### `psychopomp-client` - wallet-side SDK
 
 A small Rust library the wallet uses to outsource a proof instead of running it locally.
 
@@ -162,7 +162,7 @@ Responsibilities:
 
 The integration surface in LDEX is one function call: replace the local `risc0_zkvm::Prover::prove(...)` with `psychopomp_client::prove(...)`. Everything else (witness construction, on-chain submission, balance tracking) is unchanged.
 
-### `psychopomp-registry` — on-chain LEZ program
+### `psychopomp-registry` - on-chain LEZ program
 
 State per operator:
 - Operator pubkey (signing key for registry updates).
@@ -174,12 +174,12 @@ State per operator:
 - Active status + unbonding timer.
 
 Instructions:
-- `Register { attestation_root, measurements, hw_class }` — stake-gated.
-- `UpdateMeasurements { measurements }` — re-stake + cooldown.
-- `Unbond` — opens a 2-week timer before stake withdraws.
-- `Withdraw` — only after unbonding completes.
+- `Register { attestation_root, measurements, hw_class }` - stake-gated.
+- `UpdateMeasurements { measurements }` - re-stake + cooldown.
+- `Unbond` - opens a 2-week timer before stake withdraws.
+- `Withdraw` - only after unbonding completes.
 
-### `psychopomp-escrow` — on-chain LEZ program
+### `psychopomp-escrow` - on-chain LEZ program
 
 State per job:
 - Client pubkey, ciphertext hash, measurement filter, hw-class filter.
@@ -188,10 +188,10 @@ State per job:
 - Status: `Open | Awarded(operator) | Settled | Refunded`.
 
 Instructions:
-- `Post { ciphertext_hash, filter, max_bid, deadline }` — locks `max_bid` LEZ.
-- `Accept { job_id }` — operator commits to deliver. Locks an additional per-job stake from the operator's bond.
-- `Settle { job_id, stark, attestation }` — verifies both, releases escrow to operator, returns per-job stake to operator's bond.
-- `Fault { job_id }` — callable by anyone after the deadline OR on attestation/STARK rejection; refunds escrow to client, slashes operator's per-job stake.
+- `Post { ciphertext_hash, filter, max_bid, deadline }` - locks `max_bid` LEZ.
+- `Accept { job_id }` - operator commits to deliver. Locks an additional per-job stake from the operator's bond.
+- `Settle { job_id, stark, attestation }` - verifies both, releases escrow to operator, returns per-job stake to operator's bond.
+- `Fault { job_id }` - callable by anyone after the deadline OR on attestation/STARK rejection; refunds escrow to client, slashes operator's per-job stake.
 
 ---
 
@@ -199,11 +199,11 @@ Instructions:
 
 | Class | Maturity | Confidential compute model | Notes |
 |---|---|---|---|
-| **NVIDIA H100 CC** | Mature (2024+) | Hopper Confidential Compute — entire GPU + connected CPU memory sealed; remote attestation via NVIDIA NRAS | Available on Azure, GCP, OCI. ~5–10% throughput overhead vs bare-metal. The default target. |
+| **NVIDIA H100 CC** | Mature (2024+) | Hopper Confidential Compute - entire GPU + connected CPU memory sealed; remote attestation via NVIDIA NRAS | Available on Azure, GCP, OCI. ~5-10% throughput overhead vs bare-metal. The default target. |
 | **AMD MI300 SEV-SNP** | Mid-maturity | SEV-SNP CPU + Instinct GPU passthrough | Cheaper per FLOP than H100. Smaller cloud footprint. |
 | **Intel TDX + GPU passthrough** | Early (2025+) | TDX trust domain with PCIe-attached GPU | Most flexible (any GPU), least proven attestation chain. |
 
-The protocol is hardware-agnostic at the registry level — operators declare their class and `MRENCLAVE`, clients filter by class.
+The protocol is hardware-agnostic at the registry level - operators declare their class and `MRENCLAVE`, clients filter by class.
 
 Diversifying across vendors hedges side-channel risk: a compromise of NVIDIA's attestation chain doesn't compromise MI300 or TDX operators. High-value jobs can require *diverse attestation* (the same job co-proved by operators on two different hardware classes; STARKs aggregated client-side).
 
@@ -219,9 +219,9 @@ Open membership: anyone can stake + register, no permissioning. Reputation is pe
 
 ### Rewards
 
-- **Per-proof fee** — the primary revenue stream. Paid by clients in LEZ from the escrow.
-- **Optional treasury subsidy** — early supply-side bootstrapping; a portion of LDEX trading fees (or a separate Psychopomp treasury) underwrites operator rewards to grow the supply side until organic demand sustains it.
-- **Slashed-bond redistribution** — slashed stakes are partly burnt, partly redistributed pro-rata to honest operators in the same epoch (so honest operators benefit from policing).
+- **Per-proof fee** - the primary revenue stream. Paid by clients in LEZ from the escrow.
+- **Optional treasury subsidy** - early supply-side bootstrapping; a portion of LDEX trading fees (or a separate Psychopomp treasury) underwrites operator rewards to grow the supply side until organic demand sustains it.
+- **Slashed-bond redistribution** - slashed stakes are partly burnt, partly redistributed pro-rata to honest operators in the same epoch (so honest operators benefit from policing).
 
 ### Stake-to-revenue ratio
 
@@ -239,36 +239,36 @@ Stake withdrawal requires a 2-week unbonding timer. Late-discovered faults (e.g.
 
 Mapped attack class → mitigation. The honest scoreboard: liveness/correctness/censorship/sybil/MEV all have objective on-chain defences; confidentiality is cryptographic + economic with no on-chain proof-of-leak.
 
-### Liveness — operator accepts a job, doesn't deliver
+### Liveness - operator accepts a job, doesn't deliver
 
-- Tight per-job deadline (default 1–2 blocks; client-settable).
+- Tight per-job deadline (default 1-2 blocks; client-settable).
 - After deadline, any keeper submits a fault tx → escrow refunds to client → operator's per-job stake slashed.
 - Reputation decay on missed deadlines; bad operators get routed around.
 
-### Correctness — operator returns invalid STARK or bad attestation
+### Correctness - operator returns invalid STARK or bad attestation
 
 - Verifier program (in `psychopomp-escrow`) re-checks both:
   - STARK verifies under upstream `PRIVACY_PRESERVING_CIRCUIT_ID` (or the relevant program's `IMAGE_ID`).
   - Attestation chains to a chain-governed hardware-vendor root key.
 - Failure → fault path. Same slash as liveness.
 
-### Confidentiality — operator extracts the witness
+### Confidentiality - operator extracts the witness
 
 The hard one. Layered defences, no single layer sufficient:
 
 - **Measurement-bound encryption.** Client encrypts to a *fresh ephemeral key derived inside the enclave* and *bound to the published `MRENCLAVE`*. Operator's long-term key never sees plaintext. If the operator runs a modified binary, attestation rolls up to a different measurement and the client refuses to send.
 - **Open prover binary + governance-controlled measurement whitelist.** Anyone can rebuild Psychopomp and verify the published measurement matches the source. Updates require a governance proposal; no unilateral operator key rotation.
 - **Hardware diversity.** Network supports multiple TEE backends. A vendor-specific compromise (or class-specific side-channel) doesn't compromise the whole network.
-- **Optional MPC threshold proving.** For ultra-sensitive jobs: split the witness into `M` shares via Shamir or similar; route to `N ≥ t` independent operators on diverse hardware; threshold proof reconstruction inside enclaves. Cryptographic confidentiality on top of TEE — even if one operator's hardware is broken, their share is meaningless without `t-1` others colluding.
+- **Optional MPC threshold proving.** For ultra-sensitive jobs: split the witness into `M` shares via Shamir or similar; route to `N ≥ t` independent operators on diverse hardware; threshold proof reconstruction inside enclaves. Cryptographic confidentiality on top of TEE - even if one operator's hardware is broken, their share is meaningless without `t-1` others colluding.
 
-What you cannot do: prove leakage on-chain after the fact. The protocol's job is to make leakage *expensive and rare*, not *impossible*. Accept that the residual risk reduces to "one user's secrets leak if one operator's hardware is broken" — and design every protocol decision so a breach affects one user, never chain integrity, never many users.
+What you cannot do: prove leakage on-chain after the fact. The protocol's job is to make leakage *expensive and rare*, not *impossible*. Accept that the residual risk reduces to "one user's secrets leak if one operator's hardware is broken" - and design every protocol decision so a breach affects one user, never chain integrity, never many users.
 
 ### MEV / front-running based on witness contents
 
 A malicious operator who could see the witness contents could attempt to extract value (e.g., front-run a private swap once they see its intent).
 
 - **Commit-reveal cipher delivery.** Client posts `H(ciphertext)` on-chain when the job is awarded; the actual ciphertext is delivered to the winning operator over an attested channel only after the on-chain award. Operator can't peek-then-re-bid.
-- **Tight deadlines.** A 1–2 block window means delaying = forfeiting.
+- **Tight deadlines.** A 1-2 block window means delaying = forfeiting.
 - **Optional time-locked encryption** for the highest-sensitivity jobs: ciphertext is decryptable only after a future block, regardless of who has it. Lifts the constraint that "operator gets cipher → operator can decrypt immediately."
 
 ### Censorship
@@ -279,7 +279,7 @@ A coordinated subset of operators refuses certain users / jobs.
 - **Open membership.** Censoring coalition has to outbid the entire honest market.
 - **Public job mempool** → systemic censorship is observable → reputation hit → routing weights fall.
 
-### Sybil — single entity registers many "operators"
+### Sybil - single entity registers many "operators"
 
 - **Stake gating.** Each operator-pubkey requires a meaningful LEZ bond.
 - **Per-pubkey reputation.** New sybils start at zero rep, have to earn their way up against established operators.
@@ -326,37 +326,37 @@ The witness boundary is the `env` argument (RISC0's `ExecutorEnv`), which is con
 
 ## Roadmap
 
-### Phase 0 — proof of concept (1 prover, 1 cloud)
+### Phase 0 - proof of concept (1 prover, 1 cloud)
 
 - `psychopomp-prover` binary running inside H100 CC on Azure or GCP.
 - Stub registry + escrow as off-chain HTTP for fast iteration; on-chain settlement later.
 - LDEX wallet wired to optionally outsource one swap → measure wall-clock vs local.
-- **Success criteria:** mode-2 LDEX swap < 2 min wall-clock (vs 10–14 min CPU baseline), attestation verifies client-side, balance deltas match.
+- **Success criteria:** mode-2 LDEX swap < 2 min wall-clock (vs 10-14 min CPU baseline), attestation verifies client-side, balance deltas match.
 
-### Phase 1 — single-operator on-chain
+### Phase 1 - single-operator on-chain
 
 - `psychopomp-registry` + `psychopomp-escrow` as LEZ programs on dev.
 - One operator (us) on H100 CC; one or two clients (LDEX testnet wallets).
 - Slashing path live: simulate a missed deadline, simulate an invalid STARK, verify on-chain fault handling works.
 
-### Phase 2 — multi-operator + diverse hardware
+### Phase 2 - multi-operator + diverse hardware
 
 - Add MI300 SEV-SNP operator; demonstrate diverse-attestation co-proving on a high-value job.
 - Reputation mechanics live; client SDK does routing.
 - Open operator registration on dev.
 
-### Phase 3 — economic equilibrium + governance
+### Phase 3 - economic equilibrium + governance
 
 - Treasury subsidy schedule defined; LEZ-denominated rewards live.
 - Governance program for `MRENCLAVE` whitelist updates + parameter tuning (`K`, `α`, deadline floor, unbonding period).
 - Public testnet open to third-party operators.
 
-### Phase 4 — optional MPC threshold
+### Phase 4 - optional MPC threshold
 
 - Witness sharing scheme + threshold RISC0 proving spec.
-- Targeted at single high-value flows (large privacy swaps, institutional users) — not the common path.
+- Targeted at single high-value flows (large privacy swaps, institutional users) - not the common path.
 
-### Phase 5 — mainnet + multi-app
+### Phase 5 - mainnet + multi-app
 
 - Mainnet deployment on Logos.
 - Open the SDK to other privacy apps on LEZ.
@@ -372,14 +372,14 @@ These are real and unresolved; the design assumes plausible answers but doesn't 
 - **Hardware-vendor root key rotation:** what happens when NVIDIA / AMD / Intel rotate their attestation roots? Chain governance must absorb the update; we need a fast-track path for vendor-driven rotations vs the normal proposal cadence.
 - **MPC threshold proving feasibility:** the cryptography is published (folded into existing MPC-on-RISC0 work) but the practical overhead may make it a niche path rather than a default. Phase 4 will quantify.
 - **Sybil clustering inference:** routing-by-diversity needs a way to identify operators that are nominally distinct but actually co-located. Network-level clustering (BGP, ASN, datacenter) is a starting heuristic; better signals may emerge.
-- **Reward bootstrapping:** the chicken-and-egg between operator supply (needs paying jobs) and client demand (needs reliable supply). Phase 0–1 self-bootstraps with LDEX as the only client; the right subsidy curve to escape that into a real market is an open economic question.
+- **Reward bootstrapping:** the chicken-and-egg between operator supply (needs paying jobs) and client demand (needs reliable supply). Phase 0-1 self-bootstraps with LDEX as the only client; the right subsidy curve to escape that into a real market is an open economic question.
 
 ---
 
 ## Related
 
-- [LDEX](../ldex) — the first client. The full LDEX architecture + privacy-circuit description lives there; Psychopomp is the prover-offload layer for it.
-- [RISC Zero zkVM](https://risczero.com/) — the proving system whose STARKs Psychopomp outsources.
-- [Logos Execution Zone](https://github.com/logos-co) — the chain Psychopomp settles on.
-- Boundless / Bonsai — the comparable proving marketplaces that Psychopomp differs from by inserting the TEE attestation layer.
-- NVIDIA Hopper Confidential Compute — the primary hardware target.
+- [LDEX](../ldex) - the first client. The full LDEX architecture + privacy-circuit description lives there; Psychopomp is the prover-offload layer for it.
+- [RISC Zero zkVM](https://risczero.com/) - the proving system whose STARKs Psychopomp outsources.
+- [Logos Execution Zone](https://github.com/logos-co) - the chain Psychopomp settles on.
+- Boundless / Bonsai - the comparable proving marketplaces that Psychopomp differs from by inserting the TEE attestation layer.
+- NVIDIA Hopper Confidential Compute - the primary hardware target.

@@ -101,7 +101,7 @@ mod psychopomp_registry {
     }
 
     /// Called BY ANOTHER PROGRAM (in practice psychopomp-escrow) as a
-    /// chained call. Direct user invocation is rejected — anyone could
+    /// chained call. Direct user invocation is rejected - anyone could
     /// otherwise inflate a competitor's failure count. Phase-1 gate is
     /// "must be chain-called by some program"; Phase-2 will pin the
     /// escrow's ProgramId explicitly after deploy.

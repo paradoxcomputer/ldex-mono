@@ -1,4 +1,4 @@
-//! #24 e2e harness — drives the shim FFI directly against the live
+//! #24 e2e harness - drives the shim FFI directly against the live
 //! testnet. Two ops:
 //!
 //!   pool  <cfg> <store> <amm> <holdA> <holdB> <lp> <amount> <fees>
@@ -231,7 +231,7 @@ fn main() {
             println!("private_swap_exact_in rc={rc} tx={}", hx(&tx));
             std::process::exit(if rc == LDEX_AMM_OK { 0 } else { 1 });
         }
-        // Public swap (fast, no proof) — drives an on-chain AMM tx that
+        // Public swap (fast, no proof) - drives an on-chain AMM tx that
         // accumulates the oracle + pushes an observation (§5.11③).
         // pubswap <cfg> <store> <amm> <holdA> <holdB> <tokIn> <amt> <min> <fees>
         "pubswap" => {
@@ -257,7 +257,7 @@ fn main() {
             println!("swap_exact_in rc={rc} tx={}", hx(&tx));
             std::process::exit(if rc == LDEX_AMM_OK { 0 } else { 1 });
         }
-        // RFP Func #8 — ATA-based swap.
+        // RFP Func #8 - ATA-based swap.
         // swap_ata <cfg> <store> <amm> <owner> <defA> <defB> <token_in> <amount> <min_out> <fees>
         "swap_ata" => {
             let (owner, da, db, tin) =
@@ -538,7 +538,7 @@ fn main() {
             println!("private_add_liquidity rc={rc} tx={}", hx(&tx));
             std::process::exit(if rc == LDEX_AMM_OK { 0 } else { 1 });
         }
-        // Derive the amm_v2 LP-def PDA for (defA, defB, fees). Pure —
+        // Derive the amm_v2 LP-def PDA for (defA, defB, fees). Pure -
         // matches what amm_v2 deploys when the pool is created. Lets the
         // bootstrap / test harness pre-create the user's LP ATA before
         // calling the ATA-only pool-create path.

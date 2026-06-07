@@ -13,7 +13,7 @@ mod wlez {
 
     /// One-shot setup: claim the WLEZ vault PDA + create the WLEZ token
     /// definition via a chained `token::NewFungibleDefinition`. Idempotent
-    /// — re-running is a no-op (vault already claimed + definition already
+    /// - re-running is a no-op (vault already claimed + definition already
     /// owned by the token program).
     #[instruction]
     pub fn initialize(

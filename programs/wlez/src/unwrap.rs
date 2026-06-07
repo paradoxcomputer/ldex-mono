@@ -1,11 +1,11 @@
-//! WLEZ::Unwrap — burn `amount` WLEZ from the user's holding, release
+//! WLEZ::Unwrap - burn `amount` WLEZ from the user's holding, release
 //! `amount` native LEZ from the vault to the user's native account.
 //!
 //! Why this is NOT symmetric with Wrap:
 //!
 //! Wrap chains `authenticated_transfer::transfer(user_native → vault)`,
 //! and that works because `user_native` is *owned by* the auth-transfer
-//! program — which is also the executing program for the chained call,
+//! program - which is also the executing program for the chained call,
 //! so `validate_execution`'s "only the owning program can decrease an
 //! account's balance" rule is satisfied (executing == owning).
 //!
@@ -14,7 +14,7 @@
 //! user_native)`, the executing program would be `auth_transfer`, the
 //! vault's owner is WLEZ, and the framework would reject with
 //! `UnauthorizedBalanceDecrease` regardless of any
-//! `is_authorized` flag or `with_pda_seeds` value — that flag only
+//! `is_authorized` flag or `with_pda_seeds` value - that flag only
 //! satisfies the *guest's* `assert!(sender.is_authorized)`, not the
 //! sequencer's ownership check.
 //!
@@ -26,7 +26,7 @@
 //! token program.
 //!
 //! End-state invariant: `vault.balance == definition.total_supply`
-//! preserved by construction — both shrink by `amount`.
+//! preserved by construction - both shrink by `amount`.
 
 use nssa_core::{
     account::AccountWithMetadata,
@@ -56,7 +56,7 @@ pub fn unwrap(
         "definition account_id does not match WLEZ definition PDA"
     );
 
-    // User must have authorised this op — they're burning their WLEZ.
+    // User must have authorised this op - they're burning their WLEZ.
     assert!(
         user_holding.is_authorized,
         "User authorization is missing on the WLEZ holding (cannot burn)"
@@ -107,7 +107,7 @@ pub fn unwrap(
         AccountPostState::new(user_native_post),
     ];
 
-    // Chained burn — token program is the executing program, holding is
+    // Chained burn - token program is the executing program, holding is
     // owned by token program, so the burn is allowed under the ownership
     // rule. The user's tx signature authorises the holding.
     let call_burn = ChainedCall::new(

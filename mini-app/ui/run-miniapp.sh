@@ -6,7 +6,7 @@
 # Proof mode: NOT in RISC0 dev mode (real STARKs). The dev sequencer at
 # /tmp/ldex-dev/ was started without RISC0_DEV_MODE in its env, so it
 # verifies real STARK proofs. We must match. Mode-1 / mode-2 private
-# swaps take 10–15 min wall-clock per swap as a result.
+# swaps take 10-15 min wall-clock per swap as a result.
 #
 # Want fast (fake) proofs for UI iteration? Both sides must agree:
 # `export RISC0_DEV_MODE=1` AND restart the sequencer under the same
@@ -16,7 +16,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 echo ">> nix run . (logos-standalone-app: ldex_ui + ldex_core)"
-echo ">> RUST_BACKTRACE=1  (real STARK proofs — sequencer is in real mode)"
+echo ">> RUST_BACKTRACE=1  (real STARK proofs - sequencer is in real mode)"
 
 # Strip RISC0_DEV_MODE from the env handed to `nix run`. `unset` alone
 # only modifies this bash; `env -u` guarantees the var is absent in the
@@ -49,6 +49,6 @@ export LDEX_REPO="$LDEX_REPO_ABS"
 if git -C "$HERE" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exec env -u RISC0_DEV_MODE LDEX_REPO="$LDEX_REPO_ABS" nix run .
 else
-  echo ">> (not a git repo — using --override-input fallback for ldex_core)"
+  echo ">> (not a git repo - using --override-input fallback for ldex_core)"
   exec env -u RISC0_DEV_MODE LDEX_REPO="$LDEX_REPO_ABS" nix run --override-input ldex_core "path:$CORE_ABS" .
 fi

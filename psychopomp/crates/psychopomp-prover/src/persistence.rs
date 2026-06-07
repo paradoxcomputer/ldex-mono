@@ -1,6 +1,6 @@
 //! Job-table persistence. Append-only JSONL of (job_id, JobStatus) events;
 //! replayed on startup to reconstruct in-memory state. One file write per
-//! status transition — fine at Phase-0 throughput (single-digit jobs/min).
+//! status transition - fine at Phase-0 throughput (single-digit jobs/min).
 
 use psychopomp_types::JobStatus;
 use serde::{Deserialize, Serialize};

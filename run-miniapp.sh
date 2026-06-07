@@ -38,11 +38,11 @@ fi
 
 # Dev-mode proofs: privateSwap on the real STARK prover takes 30-60 min
 # per op; with RISC0_DEV_MODE=1 it finishes in seconds. The proofs it
-# produces are NOT cryptographically valid — only use this for local
+# produces are NOT cryptographically valid - only use this for local
 # iteration. To run the real prover, unset RISC0_DEV_MODE before launch:
 #   RISC0_DEV_MODE=0 bash run-miniapp.sh   (or unset RISC0_DEV_MODE)
 export RISC0_DEV_MODE="${RISC0_DEV_MODE:-1}"
-# Surface Rust panic messages + backtrace in the launcher's stderr —
+# Surface Rust panic messages + backtrace in the launcher's stderr -
 # otherwise `thread caused non-unwinding panic. aborting.` is all we
 # see, with no clue where it happened.
 export RUST_BACKTRACE="${RUST_BACKTRACE:-1}"

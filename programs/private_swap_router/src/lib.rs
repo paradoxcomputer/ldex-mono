@@ -1,9 +1,9 @@
 //! Account-A private-swap router logic.
 //!
 //! Emits, as one chained-call tree under a single privacy-preserving
-//! proof: (1) deshield — token `Transfer` from the user's
+//! proof: (1) deshield - token `Transfer` from the user's
 //! circuit-deshielded private input holding into fresh public account A;
-//! (2) AMM `SwapExactInput` from A in the public pool; (3) re-shield —
+//! (2) AMM `SwapExactInput` from A in the public pool; (3) re-shield -
 //! token `Transfer` of A's output back to the user's private holding.
 //!
 //! The re-shield amount is the AMM constant-product output, which is not
@@ -12,7 +12,7 @@
 //! pre-state, byte-for-byte mirroring `amm/src/swap.rs::swap_logic`**.
 //! This duplicate-math coupling is intentional and is the core reason the
 //! routerless `PrivateOwned` mode (design.md §5.10 "Private") is the
-//! recommended path — this router exists only for verbatim RFP AC #4.
+//! recommended path - this router exists only for verbatim RFP AC #4.
 
 pub use private_swap_router_core as core;
 
@@ -27,7 +27,7 @@ use wlez_core::Instruction as WlezInstruction;
 /// Apply a signed balance delta to a Fungible token holding, returning the
 /// updated `AccountWithMetadata`. Used by the router to build each
 /// chained call's `pre_states` reflecting the running state produced by
-/// prior chained calls in the same proof — the LEZ framework
+/// prior chained calls in the same proof - the LEZ framework
 /// (`nssa/src/validated_state_diff.rs`) checks each call's pre_states
 /// against the running state_diff, so they must match.
 fn shift_balance(awm: &AccountWithMetadata, delta_pos: u128, sign_pos: bool) -> AccountWithMetadata {
@@ -55,7 +55,7 @@ fn shift_balance(awm: &AccountWithMetadata, delta_pos: u128, sign_pos: bool) -> 
 /// Orchestrate one atomic deshield → public AMM swap → re-shield.
 ///
 /// Account order: `[user_holding_in, a_holding_a, a_holding_b, pool,
-/// vault_a, vault_b, user_holding_out]`. **No clock account** — the
+/// vault_a, vault_b, user_holding_out]`. **No clock account** - the
 /// chained AMM call uses `SwapExactInputCircuit` which deliberately
 /// doesn't touch CLOCK_01 so the privacy proof's pre-state set is
 /// drift-free (see `amm_core::Instruction::SwapExactInputCircuit` for
@@ -82,7 +82,7 @@ pub fn private_swap(
     assert_eq!(pool_def.fees, fees, "Pool fee tier mismatch");
 
     // Derive callee program ids from the accounts they own (mirrors how
-    // `amm/src/swap.rs` derives the token program from a vault's owner) —
+    // `amm/src/swap.rs` derives the token program from a vault's owner) -
     // no hardcoded ids, stays correct across redeploys.
     let token_program_id = user_holding_in.account.program_owner;
     let amm_program_id = pool.account.program_owner;
@@ -118,7 +118,7 @@ pub fn private_swap(
     // (2) Public AMM swap from A. The framework validates each chained
     //     call's pre_states against the **running state diff** from prior
     //     chained calls (nssa/src/validated_state_diff.rs ~L138-153), so
-    //     a_holding_a/b here must reflect the post-deshield balances —
+    //     a_holding_a/b here must reflect the post-deshield balances -
     //     not the proof-start clones. Whichever of a_holding_{a,b} matches
     //     the input side has +swap_amount_in; the other is unchanged.
     let (amm_a_a, amm_a_b) = if token_definition_id_in == pool_def.definition_token_a_id {
@@ -134,7 +134,7 @@ pub fn private_swap(
             vault_b.clone(),
             amm_a_a,
             amm_a_b,
-            // No clock account — see `SwapExactInputCircuit` doc on
+            // No clock account - see `SwapExactInputCircuit` doc on
             // the AMM instruction enum for the rationale. Removing
             // CLOCK_01 from the proof's pre-state set lets a slow CPU
             // ZK proof complete and still verify cleanly: the AMM
@@ -166,7 +166,7 @@ pub fn private_swap(
     // the chained sub-programs above. The LEZ privacy circuit's
     // `validate_execution` (rule #2 length + rule #3 unchanged-nonce)
     // demands one post-state per input account, matching pre.nonce
-    // exactly — so explicitly echo all 8 inputs unchanged here. (Don't
+    // exactly - so explicitly echo all 8 inputs unchanged here. (Don't
     // rely on SPEL's auto-padding: it triggered ModifiedNonce on the
     // disposable A holdings.)
     let post_states = vec![
@@ -177,7 +177,7 @@ pub fn private_swap(
         AccountPostState::new(vault_a.account),
         AccountPostState::new(vault_b.account),
         AccountPostState::new(user_holding_out.account),
-        // No clock — see chained-call comment above.
+        // No clock - see chained-call comment above.
     ];
 
     (post_states, chained_calls)
@@ -209,7 +209,7 @@ fn shift_native_balance(awm: &AccountWithMetadata, delta_pos: u128, sign_pos: bo
 ///
 /// Replaces the two-tx `wrap → private_swap` flow for native LEZ input:
 ///   - saves one block wait (~10 s) and one tx-submit roundtrip;
-///   - atomic — wrap+swap either both land or neither does (no
+///   - atomic - wrap+swap either both land or neither does (no
 ///     stuck-WLEZ failure mode).
 #[expect(clippy::too_many_arguments, reason = "fixed protocol account list")]
 #[must_use]
@@ -223,7 +223,7 @@ pub fn private_swap_native_in(
     vault_a: AccountWithMetadata,
     vault_b: AccountWithMetadata,
     user_holding_out: AccountWithMetadata,
-    // No clock — the chained AMM call uses `SwapExactInputCircuit`
+    // No clock - the chained AMM call uses `SwapExactInputCircuit`
     // (no TWAP oracle update), so the proof's pre-state set is
     // CLOCK_01-free and won't drift during slow CPU proving.
     swap_amount_in: u128,
@@ -231,7 +231,7 @@ pub fn private_swap_native_in(
     fees: u128,
     deadline: u64,
 ) -> (Vec<AccountPostState>, Vec<ChainedCall>) {
-    // Slippage / sanity guards — same shape as `private_swap`.
+    // Slippage / sanity guards - same shape as `private_swap`.
     let pool_def = PoolDefinition::try_from(&pool.account.data)
         .expect("Native-in router expects a valid Pool Definition account");
     assert_eq!(pool_def.fees, fees, "Pool fee tier mismatch");
@@ -261,7 +261,7 @@ pub fn private_swap_native_in(
 
     let mut chained_calls = Vec::with_capacity(3);
 
-    // (1) WLEZ::Wrap — user_native → vault drains `swap_amount_in`; mint
+    // (1) WLEZ::Wrap - user_native → vault drains `swap_amount_in`; mint
     //     adds `swap_amount_in` to `a_wlez_holding`. The wrap program
     //     itself emits two further chained calls (auth_transfer +
     //     token::Mint with PDA-auth on the definition). The chained call's
@@ -302,7 +302,7 @@ pub fn private_swap_native_in(
             vault_b.clone(),
             amm_a_a,
             amm_a_b,
-            // No clock — `SwapExactInputCircuit` doesn't tick the
+            // No clock - `SwapExactInputCircuit` doesn't tick the
             // TWAP oracle, so the proof's pre-state set has no
             // CLOCK_01 entry to drift. Same fix as `private_swap`.
         ],
@@ -337,7 +337,7 @@ pub fn private_swap_native_in(
         AccountPostState::new(vault_a.account),
         AccountPostState::new(vault_b.account),
         AccountPostState::new(user_holding_out.account),
-        // No clock — see chained-call comment above.
+        // No clock - see chained-call comment above.
     ];
 
     (post_states, chained_calls)
@@ -360,7 +360,7 @@ pub fn private_swap_native_out(
     wlez_definition: AccountWithMetadata,
     wlez_vault: AccountWithMetadata,
     user_native: AccountWithMetadata,
-    // No clock — chained AMM uses SwapExactInputCircuit (no oracle).
+    // No clock - chained AMM uses SwapExactInputCircuit (no oracle).
     swap_amount_in: u128,
     min_amount_out: u128,
     token_definition_id_in: AccountId,
@@ -437,7 +437,7 @@ pub fn private_swap_native_out(
             vault_b.clone(),
             amm_a_a,
             amm_a_b,
-            // No clock — see `private_swap` doc for the rationale.
+            // No clock - see `private_swap` doc for the rationale.
         ],
         &AmmInstruction::SwapExactInputCircuit {
             swap_amount_in,
@@ -473,7 +473,7 @@ pub fn private_swap_native_out(
         AccountPostState::new(wlez_definition.account),
         AccountPostState::new(wlez_vault.account),
         AccountPostState::new(user_native.account),
-        // No clock — see chained-call comment above.
+        // No clock - see chained-call comment above.
     ];
 
     // `shift_native_balance` is used only by the host-side FFI plumbing
@@ -490,7 +490,7 @@ pub fn private_swap_native_out(
 mod tests {
     //! Unit coverage for the wrap/unwrap-coupled native router paths
     //! (`private_swap_native_in` / `private_swap_native_out`), which were
-    //! otherwise entirely unexercised — only the token↔token `private_swap`
+    //! otherwise entirely unexercised - only the token↔token `private_swap`
     //! had been manually live-tested. These paths hand-build the most
     //! intricate chained-call trees in the program, and their correctness
     //! hinges on byte-for-byte pre-state reconciliation against the running
@@ -500,7 +500,7 @@ mod tests {
     //! `wlez_is_token_a` / `in_is_token_a` orientation pick. A wrong direction,
     //! a missing/extra balance shift, or an out-of-order WLEZ account vector
     //! would only surface at proof-reconstruction time as
-    //! `InvalidPrivacyPreservingProof` / `UnauthorizedBalanceDecrease` — never
+    //! `InvalidPrivacyPreservingProof` / `UnauthorizedBalanceDecrease` - never
     //! at compile time and never in CI. The asserts below pin each of those so
     //! an off-by-one fails here instead of only at the sequencer. Both pool
     //! orientations (WLEZ as token A and as token B) are driven.
@@ -598,12 +598,12 @@ mod tests {
     // ---- WLEZ-side fixtures ----------------------------------------------
     //
     // The native handlers derive `wlez_program_id` from `wlez_vault`'s owner
-    // and `token_program_id` from `wlez_definition`'s owner — they never call
+    // and `token_program_id` from `wlez_definition`'s owner - they never call
     // the WLEZ PDA helpers, so synthetic ids suffice. The only binding the
     // handler enforces is `wlez_definition.account_id == pool's WLEZ side`.
 
     /// A plain native account (owned by the native-transfer program, not a
-    /// token holding) — models `user_native`.
+    /// token holding) - models `user_native`.
     fn native_account(account_id: AccountId, balance: u128) -> AccountWithMetadata {
         let account = Account {
             program_owner: NATIVE_ID,
@@ -614,7 +614,7 @@ mod tests {
         AccountWithMetadata::new(account, false, account_id)
     }
 
-    /// The WLEZ vault PDA account (WLEZ-program owned — its owner is read as
+    /// The WLEZ vault PDA account (WLEZ-program owned - its owner is read as
     /// `wlez_program_id`).
     fn wlez_vault(account_id: AccountId) -> AccountWithMetadata {
         let account = Account {
@@ -626,7 +626,7 @@ mod tests {
         AccountWithMetadata::new(account, false, account_id)
     }
 
-    /// The WLEZ token-definition account (token-program owned — its owner is
+    /// The WLEZ token-definition account (token-program owned - its owner is
     /// read as `token_program_id` and its id is matched against the pool's
     /// WLEZ side).
     fn wlez_definition(account_id: AccountId) -> AccountWithMetadata {
@@ -681,11 +681,11 @@ mod tests {
             u64::MAX,
         );
 
-        // Three calls: Wrap, AMM swap, reshield. No separate vault legs —
+        // Three calls: Wrap, AMM swap, reshield. No separate vault legs -
         // the AMM does its own swap internally via SwapExactInputCircuit.
         assert_eq!(calls.len(), 3, "Wrap/AMM-swap/reshield");
 
-        // 1) WLEZ::Wrap — account order per wlez_core::Instruction::Wrap docs:
+        // 1) WLEZ::Wrap - account order per wlez_core::Instruction::Wrap docs:
         //    [user_native, vault, definition, a_wlez_holding]. Amount = swap_in.
         assert_eq!(calls[0].program_id, WLEZ_ID, "Wrap runs on the WLEZ program");
         assert_eq!(calls[0].pre_states[0].account_id, user_native.account_id);
@@ -696,7 +696,7 @@ mod tests {
             matches!(decode_wlez(&calls[0]), WlezInstruction::Wrap { amount } if amount == swap_in),
         );
 
-        // 2) AMM::SwapExactInputCircuit — pre_states [pool, vault_a, vault_b,
+        // 2) AMM::SwapExactInputCircuit - pre_states [pool, vault_a, vault_b,
         //    amm_a_a, amm_a_b]; exactly five (no clock). WLEZ-side A holding
         //    (token A here, so amm_a_a) MUST reflect the running diff: it was
         //    credited by `swap_in` by the Wrap mint. The output side (amm_a_b)
@@ -743,7 +743,7 @@ mod tests {
         assert_eq!(post_states[5].account().program_owner, AMM_ID, "pool at index 5");
     }
 
-    /// Same path with WLEZ as the pool's token B — the orientation pick must
+    /// Same path with WLEZ as the pool's token B - the orientation pick must
     /// place the credited WLEZ holding in the `amm_a_b` slot and the
     /// unchanged output holding in `amm_a_a`. This locks the
     /// `wlez_is_token_a` branch that the token-A test cannot reach.
@@ -870,7 +870,7 @@ mod tests {
             matches!(decode_token(&calls[0]), TokenInstruction::Transfer { amount_to_transfer } if amount_to_transfer == swap_in),
         );
 
-        // 2) AMM::SwapExactInputCircuit — five pre_states (no clock). The
+        // 2) AMM::SwapExactInputCircuit - five pre_states (no clock). The
         //    input-side A holding (token A == amm_a_a) MUST reflect the
         //    deshield credit; the WLEZ output side (amm_a_b) is unchanged.
         assert_eq!(calls[1].program_id, AMM_ID);
@@ -892,7 +892,7 @@ mod tests {
                 if swap_amount_in == swap_in && token_definition_id_in == def_a()
         ));
 
-        // 3) WLEZ::Unwrap — account order per wlez_core::Instruction::Unwrap
+        // 3) WLEZ::Unwrap - account order per wlez_core::Instruction::Unwrap
         //    docs: [a_wlez_holding, definition, vault, user_native]. The
         //    a_wlez pre-state reflects the running diff (credited by out_amount
         //    in call 2) before the burn. Amount = out_amount.

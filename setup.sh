@@ -9,7 +9,7 @@
 # Override the LEZ location:
 #   LDEX_LEZ_DIR=/path/to/lez bash setup.sh
 #
-# The convention is to clone LEZ at ~/ldex-spike/lez — see SETUP.md.
+# The convention is to clone LEZ at ~/ldex-spike/lez - see SETUP.md.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -38,7 +38,7 @@ if [ -L "$LINK" ]; then
         ln -s "$LEZ_DIR" "$LINK"
     fi
 elif [ -e "$LINK" ]; then
-    echo "✗ $LINK exists and is not a symlink — refusing to overwrite" >&2
+    echo "✗ $LINK exists and is not a symlink - refusing to overwrite" >&2
     exit 2
 else
     ln -s "$LEZ_DIR" "$LINK"
@@ -77,7 +77,7 @@ if grep -qF "$PRISTINE" "$LEZ_CARGO" 2>/dev/null; then
 elif grep -qF "$FIXED" "$LEZ_CARGO" 2>/dev/null; then
     echo "✓ _lez risc0-zkvm already bonsai-free"
 else
-    echo "⚠ could not find the expected risc0-zkvm line in $LEZ_CARGO —" >&2
+    echo "⚠ could not find the expected risc0-zkvm line in $LEZ_CARGO -" >&2
     echo "  if guest builds fail with a ring '-m64' error, drop the 'bonsai'" >&2
     echo "  default feature from risc0-zkvm there manually." >&2
 fi

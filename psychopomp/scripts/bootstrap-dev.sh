@@ -8,7 +8,7 @@
 #   - exports RECURSION_SRC_PATH to the verified zkr shipped in scripts/
 #
 # Then builds the Phase-0 stack and runs the unit-test subset that doesn't
-# require docker buildx (i.e. skips the LEZ guest ELFs — see CONTRIBUTING.md).
+# require docker buildx (i.e. skips the LEZ guest ELFs - see CONTRIBUTING.md).
 #
 # Usage:  ./scripts/bootstrap-dev.sh
 # Env:    SKIP_INSTALL=1     skip toolchain installs (assume present)
@@ -62,7 +62,7 @@ if [[ -f scripts/recursion_zkr.zip ]]; then
     export RECURSION_SRC_PATH="$PWD/scripts/recursion_zkr.zip"
     step "RECURSION_SRC_PATH = $RECURSION_SRC_PATH"
 else
-    warn "scripts/recursion_zkr.zip missing — the recursion build may fall back to S3 and could fail"
+    warn "scripts/recursion_zkr.zip missing - the recursion build may fall back to S3 and could fail"
 fi
 
 # 4. Build the Phase-0 + state-machine crates ------------------------------
@@ -102,7 +102,7 @@ Next steps:
         ./scripts/e2e-localhost.sh --release \\
             --test heavy --rounds 10000
   - Phase-1 on-chain (requires LEZ_HOME pointing at a logos-execution-zone
-    checkout): see BUILD.md > "Phase 1 — on-chain registry/escrow".
+    checkout): see BUILD.md > "Phase 1 - on-chain registry/escrow".
   - Ship to a rented GPU box:
         ./scripts/bundle-for-runpod.sh   # secrets-safe by construction
 EOF

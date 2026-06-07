@@ -1,4 +1,4 @@
-//! Signed-submit AMM ops (embedded wallet backend — A/C).
+//! Signed-submit AMM ops (embedded wallet backend - A/C).
 //!
 //! Builds AMM `PublicTransaction`s against *our* fee-tier `amm_core` +
 //! deployed AMM program id, signs with the user's wallet keys, submits to
@@ -90,7 +90,7 @@ async fn prep(
 }
 
 /// Privacy-path prep: open the wallet and derive pool/vault PDAs from
-/// **explicit token definition ids** — never reads the user holdings via
+/// **explicit token definition ids** - never reads the user holdings via
 /// `get_account_public` (private/`PrivateOwned` holdings are
 /// commitment-based and have no public state). The caller passes the
 /// definition ids it already knows (bootstrap `LDEX_DEF_A/B`).
@@ -120,14 +120,14 @@ async fn prep_private(
     // build a fresh HttpClient with 100 MiB max sizes on both directions
     // and swap it in *after* construction. The wallet's internal poller
     // keeps its own 10 MiB clone of the client, but the poller is only
-    // used for `sync_to_block` — the privacy-tx submit path goes through
+    // used for `sync_to_block` - the privacy-tx submit path goes through
     // `self.sequencer_client.send_transaction(...)` directly (see
     // `wallet/src/lib.rs:430` in v0.2.0-rc3), which is the field we just
     // replaced. The server-side cap is bumped to match in
     // `lez/sequencer/service/src/lib.rs:22` (LDEX-local edit).
     //
-    // The alternative — `NSSA_RECEIPT=succinct` to fold all assumptions
-    // into one final STARK — keeps receipts small but adds ~2-3× to
+    // The alternative - `NSSA_RECEIPT=succinct` to fold all assumptions
+    // into one final STARK - keeps receipts small but adds ~2-3× to
     // proof generation time. The body-cap bump is the better trade.
     const RPC_BODY_MAX_BYTES: u32 = 100 * 1024 * 1024;
     let wallet_cfg = wallet::config::WalletConfig::from_path_or_initialize_default(
@@ -153,7 +153,7 @@ async fn prep_private(
 }
 
 /// Returns `true` when the caller passed the token pair in the REVERSE
-/// of the pool's canonical leg order — i.e. the pool's stored
+/// of the pool's canonical leg order - i.e. the pool's stored
 /// `definition_token_a_id` is `def_b_passed`, not `def_a_passed`.
 ///
 /// The pool PDA is order-INDEPENDENT (`compute_pool_pda_seed` sorts the
@@ -184,7 +184,7 @@ async fn pool_needs_leg_flip(
 /// `definition_token_a_id` ordering, fetching the pool from chain.
 ///
 /// `prep_private` derives `vault_a = compute_vault_pda(pool, def_a_passed)`
-/// — which only matches the pool's `vault_a_id` if the caller happens
+/// - which only matches the pool's `vault_a_id` if the caller happens
 /// to pass the defs in the same order they were used at pool-create
 /// time. For swap paths against an existing pool (notably the WLEZ-
 /// paired ones, where the FFI's `(wlez_def, token_def_out)` order
@@ -195,7 +195,7 @@ async fn pool_needs_leg_flip(
 /// This helper swaps the prepped `vault_a`/`vault_b` if the pool's
 /// canonical leg order is reversed relative to `def_a_passed`. Safe
 /// no-op when the ordering already matches. NOTE: this only re-orders
-/// the vaults — paths that also pass user holdings / per-side amounts
+/// the vaults - paths that also pass user holdings / per-side amounts
 /// positionally (token↔token swap & liquidity) must flip those too; see
 /// `pool_needs_leg_flip`. It is correct on its own only for the WLEZ
 /// disposable paths, whose handlers pick the in/out vault by definition
@@ -249,7 +249,7 @@ async fn finalize<I: serde::Serialize>(
     // and any sequencer-side rejection (proof/dev-mode mismatch, conflict,
     // insufficient gas, etc.) looked indistinguishable from success to
     // the UI. With poll, an inclusion timeout or sequencer reject surfaces
-    // as LDEX_AMM_ERR_SUBMIT — the UI's busy spinner clears only after
+    // as LDEX_AMM_ERR_SUBMIT - the UI's busy spinner clears only after
     // the chain has actually accepted the tx.
     wallet
         .poll_native_token_transfer(hash)
@@ -266,7 +266,7 @@ async fn finalize<I: serde::Serialize>(
 // Shared multi-thread tokio runtime.
 //
 // Previously this function built a fresh `new_multi_thread().enable_all()`
-// runtime PER FFI CALL — spawning worker threads + IO driver + timer
+// runtime PER FFI CALL - spawning worker threads + IO driver + timer
 // driver, doing one piece of work, then tearing all of it down. The LDEX
 // CLI never noticed because it makes one call per process, but the
 // mini-app plugin makes many calls per UI refresh, and the cost (plus
@@ -371,7 +371,7 @@ pub unsafe extern "C" fn ldex_amm_pool_info(
 
 /// **On-chain** price history (design.md §5.11③). Reads the pool
 /// account's `PoolDefinition.obs` ring directly from chain and derives
-/// gapless per-interval TWAP price points — no off-chain indexer, no
+/// gapless per-interval TWAP price points - no off-chain indexer, no
 /// observer that can miss trades (every swap/liquidity tx pushed an
 /// observation by construction). Writes JSON
 /// `[{"t":unix_ms,"p":price_b_per_a}, ...]` (oldest→newest).
@@ -497,7 +497,7 @@ pub unsafe extern "C" fn ldex_amm_token_balance(
 
 /// Read the persisted on-chain price history for a pool (design.md
 /// §5.11 layer ②). Pure filesystem read of the `price_indexer` daemon's
-/// CSV — no chain call, non-blocking, safe to poll from the chart.
+/// CSV - no chain call, non-blocking, safe to poll from the chart.
 /// Path is derived identically to the daemon
 /// (`${LDEX_PRICE_DIR:-$HOME/.ldex/price}/<amm8>_<a8>_<b8>_<fee>.csv`).
 /// Writes JSON `[{"b":block,"t":unix_ms,"p":price_b_per_a}, ...]`
@@ -565,17 +565,17 @@ pub unsafe extern "C" fn ldex_amm_price_history(
     write_json(out, cap, &s)
 }
 
-/// Pool analytics estimate (RFP Usability #3) — **aggregate-only**, no
+/// Pool analytics estimate (RFP Usability #3) - **aggregate-only**, no
 /// individual positions. Derived from the on-chain-sourced reserve feed
 /// (`block_id,unix_ms,reserve_a,reserve_b,lp_supply`):
 ///
-/// * `tvlA`/`tvlB`     — latest on-chain reserves (exact: pool TVL legs).
-/// * `volA`/`volB`     — Σ|Δreserve| across samples ≈ cumulative throughput
+/// * `tvlA`/`tvlB`     - latest on-chain reserves (exact: pool TVL legs).
+/// * `volA`/`volB`     - Σ|Δreserve| across samples ≈ cumulative throughput
 ///                       (approximate: a swap moves both legs; this is a
 ///                       reserve-delta proxy, not an on-chain volume
-///                       accumulator — labelled as approximate in the UI).
-/// * `feeRevA`/`feeRevB` — `vol · fees/10000` ≈ LP fee revenue (approx).
-/// * `samples`         — number of feed rows used.
+///                       accumulator - labelled as approximate in the UI).
+/// * `feeRevA`/`feeRevB` - `vol · fees/10000` ≈ LP fee revenue (approx).
+/// * `samples`         - number of feed rows used.
 ///
 /// Returns JSON `{"tvlA":..,"tvlB":..,"volA":..,"volB":..,"feeRevA":..,
 /// "feeRevB":..,"samples":N,"feeBps":F}`. Reads no per-account state.
@@ -643,7 +643,7 @@ macro_rules! ids4 {
     }};
 }
 
-/// `NewDefinition` — create a fee-tier pool.
+/// `NewDefinition` - create a fee-tier pool.
 /// Accounts: pool, vault_a, vault_b, lp_def, lp_lock, user_a, user_b, user_lp.
 /// Signers: user_a, user_b (+ user_lp when its key is known).
 ///
@@ -712,15 +712,15 @@ pub unsafe extern "C" fn ldex_amm_new_pool(
     out32(res, out_tx_hash)
 }
 
-/// `NewDefinitionAta` — create a v1 fee-tier pool that PINS the deployed
+/// `NewDefinitionAta` - create a v1 fee-tier pool that PINS the deployed
 /// ATA program id, making the pool's ATA-routed ops
 /// (`ldex_amm_swap_exact_in_ata` / `_out_ata` / `_add_liquidity_ata`)
 /// reachable. Without this, a pool created via `ldex_amm_new_pool` pins
 /// `ProgramId::default()` (zero) and every v1 ATA op fails the
 /// `ata_program_id == pinned id` assertion. Mirrors `ldex_amm_new_pool`
 /// exactly (same keypair-holding deposit/LP-lock/LP-mint legs and account
-/// order) plus the pinned `ata_program_id`, derived — like the other F8
-/// ATA FFIs — from the `LDEX_ATA_PROGRAM_ID` env var. The amm_v2 analogue
+/// order) plus the pinned `ata_program_id`, derived - like the other F8
+/// ATA FFIs - from the `LDEX_ATA_PROGRAM_ID` env var. The amm_v2 analogue
 /// is `ldex_amm_v2_new_pool_ata`.
 ///
 /// # Safety
@@ -849,7 +849,7 @@ pub unsafe extern "C" fn ldex_amm_swap_exact_in(
     out32(res, out_tx_hash)
 }
 
-/// `SwapExactInputAta` — RFP Func #8 swap with the user side using
+/// `SwapExactInputAta` - RFP Func #8 swap with the user side using
 /// Associated Token Accounts. Owner authorises the spend (signer); the
 /// ATA program internally PDA-authorises the sender ATA.
 /// Accounts: `[pool, vault_a, vault_b, owner, ata_a, ata_b, CLOCK_01]`.
@@ -968,7 +968,7 @@ unsafe fn ata_env_ctx(
     Ok((ata_pid, ata_a, ata_b))
 }
 
-/// `SwapExactOutputAta` — RFP Func #8 swap-out via ATAs.
+/// `SwapExactOutputAta` - RFP Func #8 swap-out via ATAs.
 /// Accounts: `[pool, vault_a, vault_b, owner, ata_a, ata_b, CLOCK_01]`.
 ///
 /// # Safety
@@ -1024,7 +1024,7 @@ pub unsafe extern "C" fn ldex_amm_swap_exact_out_ata(
     out32(res, out_tx_hash)
 }
 
-/// `AddLiquidityAta` — RFP Func #8 add-liquidity via ATAs.
+/// `AddLiquidityAta` - RFP Func #8 add-liquidity via ATAs.
 /// Accounts: `[pool, vault_a, vault_b, lp_def, owner, ata_a, ata_b, ata_lp, CLOCK_01]`.
 ///
 /// # Safety
@@ -1089,10 +1089,10 @@ pub unsafe extern "C" fn ldex_amm_add_liquidity_ata(
     out32(res, out_tx_hash)
 }
 
-/// `RemoveLiquidityAta` — RFP Func #8 remove-liquidity via ATAs.
+/// `RemoveLiquidityAta` - RFP Func #8 remove-liquidity via ATAs.
 /// No new AMM instruction needed: the existing `RemoveLiquidity` already
 /// works with ATAs because the vault → user transfers are vault-PDA-
-/// authorised and the LP burn is `lp_def`-PDA-authorised — no user-side
+/// authorised and the LP burn is `lp_def`-PDA-authorised - no user-side
 /// signing is required by the AMM logic. Only the FFI changes: signer is
 /// the **owner** (which provides the outer-tx nonce), and the user-holding
 /// account ids are the deterministic ATAs derived from (owner, definition).
@@ -1333,9 +1333,9 @@ pub unsafe extern "C" fn ldex_amm_remove_liquidity(
 ///   1. env var `env_key` (explicit override)
 ///   2. `$LDEX_REPO/programs/target/riscv-guest/<rel>`
 ///   3. `<CARGO_MANIFEST_DIR>/../../programs/target/riscv-guest/<rel>`
-///      — works when the FFI was built in-tree, since CARGO_MANIFEST_DIR
+///      - works when the FFI was built in-tree, since CARGO_MANIFEST_DIR
 ///      is baked at compile time and points at `ffi/ldex-amm-ffi`
-/// No `$HOME/Documents/...` default — the LDEX repo is public, so the
+/// No `$HOME/Documents/...` default - the LDEX repo is public, so the
 /// binary must not assume a particular user's directory layout.
 /// The on-disk `.bin` is the exact artifact `bootstrap.sh` inscribed,
 /// so `Program::new(bytes).id()` is deterministic and equals the
@@ -1362,12 +1362,12 @@ fn load_deployed_program(env_key: &str, rel: &str) -> Result<Program, i32> {
     Program::new(bytes).map_err(|_| LDEX_AMM_ERR_ACCOUNT)
 }
 
-/// **Private** `SwapExactInput` — RFP-goal-conformant privacy path
+/// **Private** `SwapExactInput` - RFP-goal-conformant privacy path
 /// (design.md §5.2/§5.10, "Private" mode). One `send_privacy_preserving_tx`
 /// invoking the **existing deployed AMM** with the user's two token
 /// holdings as `PrivateOwned`: the privacy circuit deshields them into the
 /// program's view, the AMM swap runs (its chained token transfers hit the
-/// public vaults), and the post-states are re-shielded — **no public
+/// public vaults), and the post-states are re-shielded - **no public
 /// originating address ever exists on-chain**. Re-shield is structural
 /// (both holdings `PrivateOwned`); the shielded input balance is checked
 /// pre-submission. No native/gas leg: privacy txs are feeless on rc3.
@@ -1435,7 +1435,7 @@ pub unsafe extern "C" fn ldex_amm_private_swap_exact_in(
     if amm_prog.id() != amm_pid {
         return LDEX_AMM_ERR_ACCOUNT; // deployed ELF != requested AMM program
     }
-    // The token program in play is nssa's BUILT-IN `Program::token()` —
+    // The token program in play is nssa's BUILT-IN `Program::token()` -
     // the wallet's `token new/send` (and the AMM's chained transfers)
     // use it, so all holdings/vaults are owned by it. (Our separately
     // deployed token.bin has a different image id and is unused here.)
@@ -1477,7 +1477,7 @@ pub unsafe extern "C" fn ldex_amm_private_swap_exact_in(
             PrivacyPreservingAccount::Public(vault_b),
             PrivacyPreservingAccount::PrivateOwned(h_a),
             PrivacyPreservingAccount::PrivateOwned(h_b),
-            // No clock — `SwapExactInputCircuit` skips the TWAP oracle
+            // No clock - `SwapExactInputCircuit` skips the TWAP oracle
             // update, so the proof's pre-state set has no CLOCK_01
             // entry to drift during slow CPU proving. See
             // `amm_core::Instruction::SwapExactInputCircuit` doc for
@@ -1493,7 +1493,7 @@ pub unsafe extern "C" fn ldex_amm_private_swap_exact_in(
             .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
 
         // RFP Usability #7: shielded input balance must cover the swap
-        // (no gas leg to check — privacy txs are feeless on rc3).
+        // (no gas leg to check - privacy txs are feeless on rc3).
         let pre_check = move |pre: &[&nssa_core::account::Account]| {
             let acc = pre.get(input_idx).ok_or(ExecutionFailureKind::AmountMismatchError)?;
             let bal = match TokenHolding::try_from(&acc.data) {
@@ -1517,7 +1517,7 @@ pub unsafe extern "C" fn ldex_amm_private_swap_exact_in(
             .await
             .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
         // Wait for chain inclusion. Without this, the FFI returns "success"
-        // the moment the mempool accepts the submit — a sequencer rejection
+        // the moment the mempool accepts the submit - a sequencer rejection
         // (proof invalid, conflict, etc.) is then indistinguishable from a
         // successful op to the caller. With poll, rejection → ERR_SUBMIT.
         p.wallet
@@ -1534,13 +1534,13 @@ pub unsafe extern "C" fn ldex_amm_private_swap_exact_in(
     out32(res, out_tx_hash)
 }
 
-/// **Private-Disposable** swap — the RFP-literal account-A model
+/// **Private-Disposable** swap - the RFP-literal account-A model
 /// (design.md §5.10 mode 2, §5.2 router). One privacy-preserving tx whose
 /// top program is the deployed **account-A router**, with the AMM and
 /// token programs declared as chained-call dependencies. The user's
 /// private input holding is deshielded into a **fresh single-use public
 /// account A**, A swaps in the public pool, and A's output is re-shielded
-/// to the user's private output holding — atomically, one proof. A is
+/// to the user's private output holding - atomically, one proof. A is
 /// caller-created (one fresh public account per pool token) and never
 /// reused. Weaker than the routerless `ldex_amm_private_swap_exact_in`
 /// (an ephemeral public address is visible) but matches RFP Privacy AC #4
@@ -1549,7 +1549,7 @@ pub unsafe extern "C" fn ldex_amm_private_swap_exact_in(
 /// `user_holding_a/b` = the user's private holdings for the pool's token
 /// A / token B (def order from prep). `a_holding_a/b` = the two fresh
 /// public account-A holdings (created by the caller via wallet-ffi,
-/// uninitialized — the token transfers initialize them in-tx).
+/// uninitialized - the token transfers initialize them in-tx).
 ///
 /// # Safety
 /// Strings NUL-terminated UTF-8; every `*_id`/`*_holding_*` arg is 32
@@ -1629,7 +1629,7 @@ pub unsafe extern "C" fn ldex_amm_disposable_swap_exact_in(
     if amm_prog.id() != amm_pid {
         return LDEX_AMM_ERR_ACCOUNT;
     }
-    // Built-in token program (see note in the mode-1 export) — what the
+    // Built-in token program (see note in the mode-1 export) - what the
     // AMM's chained transfers actually invoke.
     let token_prog = Program::token();
     let mut deps: HashMap<nssa_core::program::ProgramId, Program> = HashMap::new();
@@ -1660,7 +1660,7 @@ pub unsafe extern "C" fn ldex_amm_disposable_swap_exact_in(
         };
 
         // Account order = router guest `private_swap` signature.
-        // No CLOCK_01 — the AMM chained call uses
+        // No CLOCK_01 - the AMM chained call uses
         // `SwapExactInputCircuit` (no oracle update) so the proof's
         // pre-state set has nothing that drifts with new blocks.
         // Public swaps (mode 0) keep using `SwapExactInput` with the
@@ -1732,7 +1732,7 @@ pub unsafe extern "C" fn ldex_amm_disposable_swap_exact_in(
 /// re-shield from a private account). One `send_privacy_preserving_tx`
 /// over the deployed AMM `AddLiquidity`: the user's two token holdings
 /// are deshielded in-circuit, liquidity is added in the public pool, and
-/// the minted LP is re-shielded to the user's private LP holding — no
+/// the minted LP is re-shielded to the user's private LP holding - no
 /// public address ever exists on-chain. The LP *position* is public
 /// pool state; which private account provided/owns it is not traceable.
 /// Same mechanism as the validated private swap (mode-1).
@@ -1869,7 +1869,7 @@ pub unsafe extern "C" fn ldex_amm_private_add_liquidity(
             .await
             .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
         // Wait for chain inclusion. Without this, the FFI returns "success"
-        // the moment the mempool accepts the submit — a sequencer rejection
+        // the moment the mempool accepts the submit - a sequencer rejection
         // (proof invalid, conflict, etc.) is then indistinguishable from a
         // successful op to the caller. With poll, rejection → ERR_SUBMIT.
         p.wallet
@@ -2021,7 +2021,7 @@ pub unsafe extern "C" fn ldex_amm_private_remove_liquidity(
             .await
             .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
         // Wait for chain inclusion. Without this, the FFI returns "success"
-        // the moment the mempool accepts the submit — a sequencer rejection
+        // the moment the mempool accepts the submit - a sequencer rejection
         // (proof invalid, conflict, etc.) is then indistinguishable from a
         // successful op to the caller. With poll, rejection → ERR_SUBMIT.
         p.wallet
@@ -2039,10 +2039,10 @@ pub unsafe extern "C" fn ldex_amm_private_remove_liquidity(
 }
 
 /// Initialize a fresh public account as a token holding for `token_def`
-/// (public `token::InitializeAccount` tx — no proof, fast). Used by the
+/// (public `token::InitializeAccount` tx - no proof, fast). Used by the
 /// Private-Disposable path to make the router's freshly-created account-A
 /// holdings valid token holdings *before* the AMM validates them
-/// upfront (the AMM rejects an uninitialized user holding —
+/// upfront (the AMM rejects an uninitialized user holding -
 /// `swap.rs` "must be owned by the vault's Token Program"). Idempotent
 /// in effect: re-initializing an already-init holding just fails
 /// harmlessly at the sequencer (caller treats non-OK as best-effort).
@@ -2127,7 +2127,7 @@ pub unsafe extern "C" fn ldex_amm_init_token_holding(
 /// Create the Associated Token Account for `(owner, token_def)` via the
 /// deployed ATA program (RFP-004 Func #8). Public tx, idempotent (no-op
 /// if the ATA already exists). The ATA id is derived deterministically
-/// (`sha256(owner ‖ def)` PDA) — the caller can also get it from
+/// (`sha256(owner ‖ def)` PDA) - the caller can also get it from
 /// `ldex_ata_id`. `out_tx_hash` ← 32-byte tx hash.
 ///
 /// # Safety
@@ -2230,7 +2230,7 @@ pub unsafe extern "C" fn ldex_ata_create(
 // ProgramId. Same `PoolDefinition` data shape as the canonical AMM;
 // vault PDAs derive under amm_v2.
 
-/// amm_v2 combined disposable swap — SINGLE-PROOF (in-circuit) variant.
+/// amm_v2 combined disposable swap - SINGLE-PROOF (in-circuit) variant.
 ///
 /// Runs deshield + AMM swap + re-shield inside ONE privacy STARK. This
 /// names the public pool PDA (+ vaults) as committed pre-states, so the
@@ -2381,7 +2381,7 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap_inproof(
             .await
             .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
         // Wait for chain inclusion. Without this, the FFI returns "success"
-        // the moment the mempool accepts the submit — a sequencer rejection
+        // the moment the mempool accepts the submit - a sequencer rejection
         // (proof invalid, conflict, etc.) is then indistinguishable from a
         // successful op to the caller. With poll, rejection → ERR_SUBMIT.
         p.wallet
@@ -2398,7 +2398,7 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap_inproof(
     out32(res, out_tx_hash)
 }
 
-/// amm_v2 combined disposable swap — DRIFT-FREE 3-transaction variant
+/// amm_v2 combined disposable swap - DRIFT-FREE 3-transaction variant
 /// (the default; replaces the former single-proof body, now preserved as
 /// [`ldex_amm_v2_disposable_swap_inproof`]).
 ///
@@ -2434,7 +2434,7 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap_inproof(
 /// resume from the A holdings.
 ///
 /// Returns the re-shield (final) tx hash. Same argument shape as
-/// [`ldex_amm_v2_disposable_swap_inproof`] — existing callers are fixed
+/// [`ldex_amm_v2_disposable_swap_inproof`] - existing callers are fixed
 /// transparently.
 ///
 /// # Safety
@@ -2584,7 +2584,7 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap(
         }
 
         // --- tx2: PUBLIC SwapExactInput a_in -> a_out. Proofless, atomic
-        // against live pool state, slippage-bounded by `min_amount_out` —
+        // against live pool state, slippage-bounded by `min_amount_out` -
         // this is the leg that makes the whole op drift-free. Signer is
         // `a_in` (deshielded, authorized); `a_out` is the now-initialised
         // output holding. 5-account list, NO Clock (amm_v2 skips the oracle). ---
@@ -2718,7 +2718,7 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap(
 
 /// Create a new amm_v2 pool (public tx, no proof). Mirror of
 /// `ldex_amm_new_pool` argument shape, but the program id and pool
-/// PDA derive under amm_v2 — the resulting pool is amm_v2-owned.
+/// PDA derive under amm_v2 - the resulting pool is amm_v2-owned.
 /// amm_v2 NewDefinition takes no Clock account (no on-chain TWAP
 /// oracle; amm_v2 pools deliberately skip it so privacy proofs over
 /// them are drift-free on slow CPU provers).
@@ -2763,7 +2763,7 @@ pub unsafe extern "C" fn ldex_amm_v2_new_pool(
         let p = prep(&cfg, &store, amm_pid, uha, uhb, fees).await?;
         let lp_def = compute_liquidity_token_pda(amm_pid, p.pool);
         let lp_lock = compute_lp_lock_holding_pda(amm_pid, p.pool);
-        // 8-account list, NO Clock — amm_v2 deliberately skips the oracle.
+        // 8-account list, NO Clock - amm_v2 deliberately skips the oracle.
         let account_ids = vec![
             p.pool, p.vault_a, p.vault_b, lp_def, lp_lock, uha, uhb, uhlp,
         ];
@@ -2788,7 +2788,7 @@ pub unsafe extern "C" fn ldex_amm_v2_new_pool(
 }
 
 // ============================================================================
-//          amm_v2 — full AMM superset (mode 0 / 1 / 2 + liquidity)
+//          amm_v2 - full AMM superset (mode 0 / 1 / 2 + liquidity)
 // ============================================================================
 //
 // These FFI exports route mode-0 (public), mode-1 (private), and mode-2
@@ -2796,9 +2796,9 @@ pub unsafe extern "C" fn ldex_amm_v2_new_pool(
 // ecosystem. amm_v2's pools are amm_v2-owned (separate PDAs from the
 // canonical AMM); the cpp_plugin / UI uses LDEX_AMM_V2_PROGRAM_ID from
 // bootstrap.env. Receipts verify under upstream PRIVACY_PRESERVING_
-// CIRCUIT_ID — testnet-compatible.
+// CIRCUIT_ID - testnet-compatible.
 //
-// Public ops use `finalize()` (no Clock — amm_v2 skips the on-chain
+// Public ops use `finalize()` (no Clock - amm_v2 skips the on-chain
 // TWAP oracle on all swaps; analytics consumes cum_volume / cum_fees
 // counters instead). Private ops use send_privacy_preserving_tx with
 // amm_v2 loaded as the deployed top-level program.
@@ -3124,7 +3124,7 @@ pub unsafe extern "C" fn ldex_amm_v2_private_swap_exact_in(
             .await
             .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
         // Wait for chain inclusion. Without this, the FFI returns "success"
-        // the moment the mempool accepts the submit — a sequencer rejection
+        // the moment the mempool accepts the submit - a sequencer rejection
         // (proof invalid, conflict, etc.) is then indistinguishable from a
         // successful op to the caller. With poll, rejection → ERR_SUBMIT.
         p.wallet
@@ -3146,14 +3146,14 @@ pub unsafe extern "C" fn ldex_amm_v2_private_swap_exact_in(
 /// + an LP-def account. Replaces the v1 `ldex_amm_private_add_liquidity`
 /// path which the chain rejects as InvalidPrivacyPreservingProof.
 ///
-/// 7-account layout (NO Clock — amm_v2 skips oracle for privacy proofs):
+/// 7-account layout (NO Clock - amm_v2 skips oracle for privacy proofs):
 ///   0. pool (Public PDA)
 ///   1. vault_a (Public PDA)
 ///   2. vault_b (Public PDA)
-///   3. lp_def (Public PDA — amm_v2's LP token definition for this pool)
+///   3. lp_def (Public PDA - amm_v2's LP token definition for this pool)
 ///   4. user_holding_a (PrivateOwned)
 ///   5. user_holding_b (PrivateOwned)
-///   6. user_holding_lp (PrivateOwned — wallet-owned, can be a fresh
+///   6. user_holding_lp (PrivateOwned - wallet-owned, can be a fresh
 ///      private account on first deposit; the proof creates the
 ///      commitment for it)
 #[no_mangle]
@@ -3550,7 +3550,7 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap_native_in(
         let instruction_data = Program::serialize_instruction(instruction)
             .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
 
-        // user_native is at pre_state index 0 — its native balance must
+        // user_native is at pre_state index 0 - its native balance must
         // cover the wrap amount.
         let pre_check = move |pre: &[&nssa_core::account::Account]| {
             let acc = pre.first().ok_or(ExecutionFailureKind::AmountMismatchError)?;
@@ -3571,7 +3571,7 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap_native_in(
             .await
             .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
         // Wait for chain inclusion. Without this, the FFI returns "success"
-        // the moment the mempool accepts the submit — a sequencer rejection
+        // the moment the mempool accepts the submit - a sequencer rejection
         // (proof invalid, conflict, etc.) is then indistinguishable from a
         // successful op to the caller. With poll, rejection → ERR_SUBMIT.
         p.wallet
@@ -3726,7 +3726,7 @@ pub unsafe extern "C" fn ldex_amm_v2_disposable_swap_native_out(
             .await
             .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
         // Wait for chain inclusion. Without this, the FFI returns "success"
-        // the moment the mempool accepts the submit — a sequencer rejection
+        // the moment the mempool accepts the submit - a sequencer rejection
         // (proof invalid, conflict, etc.) is then indistinguishable from a
         // successful op to the caller. With poll, rejection → ERR_SUBMIT.
         p.wallet
@@ -3920,12 +3920,12 @@ pub unsafe extern "C" fn ldex_amm_v2_add_liquidity_ata(
     out32(res, out_tx_hash)
 }
 
-/// amm_v2 NewDefinitionAta — create a new amm_v2 pool whose initial
+/// amm_v2 NewDefinitionAta - create a new amm_v2 pool whose initial
 /// user-side LP is minted straight into the user's deterministic
 /// `ATA(owner, lp_def)` (RFP Func #8 on the LP holding). Token
 /// deposits come from the user's keypair `user_holding_a/b` via
 /// canonical `token::Transfer` (the brand-new vaults start default
-/// and only the token program's PDA-claim path initialises them — an
+/// and only the token program's PDA-claim path initialises them - an
 /// `ata::Transfer` to a default destination is rejected at the ATA
 /// program level).
 #[no_mangle]
@@ -3963,7 +3963,7 @@ pub unsafe extern "C" fn ldex_amm_v2_new_pool_ata(
         let lp_lock = compute_lp_lock_holding_pda(amm_pid, p.pool);
         let ata_lp = ata_core::get_associated_token_account_id(
             &ata_pid, &ata_core::compute_ata_seed(owner_id, lp_def));
-        // 9-account list (no Clock — amm_v2 skips oracle).
+        // 9-account list (no Clock - amm_v2 skips oracle).
         let account_ids = vec![
             p.pool, p.vault_a, p.vault_b, lp_def, lp_lock,
             owner_id, uha, uhb, ata_lp,
@@ -3978,7 +3978,7 @@ pub unsafe extern "C" fn ldex_amm_v2_new_pool_ata(
     out32(res, out_tx_hash)
 }
 
-/// amm_v2 RemoveLiquidityAta — chain `ata::Burn` (owner-auth) for the
+/// amm_v2 RemoveLiquidityAta - chain `ata::Burn` (owner-auth) for the
 /// LP, then `token::Transfer` (vault PDA-auth) to return underlying
 /// tokens into the user's ATAs.
 #[no_mangle]
@@ -4139,7 +4139,7 @@ pub unsafe extern "C" fn ldex_ata_transfer(
 /// can top up a private balance without going through a swap.
 ///
 /// IMPORTANT: this is NOT the same primitive as
-/// `wallet_ffi_transfer_shielded_owned` — that one targets the native LEZ
+/// `wallet_ffi_transfer_shielded_owned` - that one targets the native LEZ
 /// `authenticated_transfer_program` and refuses with InsufficientFunds
 /// when used on a token holding (it checks `account.balance`, the
 /// account's native field, which is always 0 for token holdings).
@@ -4197,7 +4197,7 @@ pub unsafe extern "C" fn ldex_token_shield(
             )
             .await
             .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
-        // Don't return until the tx is included in a block — otherwise the
+        // Don't return until the tx is included in a block - otherwise the
         // FFI returns "success" the moment the mempool accepts the tx, and
         // the caller (UI) reads stale balances. If the sequencer rejects
         // (e.g. dev/real proof mode mismatch), this surfaces as a poll
@@ -4210,7 +4210,7 @@ pub unsafe extern "C" fn ldex_token_shield(
         // local cache so walletTokens() sees the new PRIV balance
         // immediately. Without this the wallet only learns about the
         // shielded receipt later, when syncPrivateBalances scans the new
-        // block — and that race made the UI claim "no shielded balance"
+        // block - and that race made the UI claim "no shielded balance"
         // even after a successful shield.
         if let NSSATransaction::PrivacyPreserving(ppt) = tx {
             let secret = secrets

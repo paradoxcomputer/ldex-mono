@@ -16,7 +16,7 @@ amm_core = { path = "../../programs/amm/core" }
 private_swap_router_core = { path = "../../programs/private_swap_router/core" }
 # amm_v2 combined private-swap program. Replaces the
 # (router + amm + 4 token::Transfer) recursive tree with
-# (amm_v2 + 4 token::Transfer) for mode-2 disposable swaps —
+# (amm_v2 + 4 token::Transfer) for mode-2 disposable swaps -
 # saves 1 env::verify (~5-10% wall-clock reduction on CPU).
 # IMAGE_ID is just amm_v2's deployed ProgramId; receipts verify
 # under the upstream PRIVACY_PRESERVING_CIRCUIT_ID. Official-
@@ -27,13 +27,13 @@ ata_core = { path = "../../programs/ata/core" }
 # WLEZ (Wrapped LEZ): native-to-SPL wrapper so the AMM can take the gas
 # token. PDA derivations + Initialize/Wrap/Unwrap submit ops.
 wlez_core = { path = "../../programs/wlez/core" }
-# Same rc3 source amm_core resolves nssa_core to — keeps AccountId/ProgramId
+# Same rc3 source amm_core resolves nssa_core to - keeps AccountId/ProgramId
 # byte-identical with the on-chain program and the wallet tx path.
 nssa_core = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.2.0-rc3", features = ["host"] }
 
 # Signed-submit ops: build/sign/submit AMM PublicTransactions reusing the
 # wallet's plumbing. All rc3 (== amm_core's nssa_core source) so nssa types
-# interoperate. AMM ops are public txs — NO risc0 `prove` (kept lightweight).
+# interoperate. AMM ops are public txs - NO risc0 `prove` (kept lightweight).
 nssa = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.2.0-rc3" }
 wallet = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.2.0-rc3" }
 common = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.2.0-rc3" }
@@ -67,7 +67,7 @@ borsh = "1"
 nssa = { path = "../../_lez/nssa" }
 nssa_core = { path = "../../_lez/nssa/core" }
 wallet = { path = "../../_lez/wallet" }
-# Pin common to local too — wallet (patched local) re-exports
+# Pin common to local too - wallet (patched local) re-exports
 # NSSATransaction from common, and if `common` is still pulled from the
 # git tag we end up with two incompatible copies of the enum.
 common = { path = "../../_lez/common" }

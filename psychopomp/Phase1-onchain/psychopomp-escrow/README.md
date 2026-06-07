@@ -1,4 +1,4 @@
-# psychopomp-escrow — Phase-1
+# psychopomp-escrow - Phase-1
 
 Pure-Rust state machine: [`../psychopomp-escrow-core`](../psychopomp-escrow-core).
 Per-job lifecycle (Open → Awarded → Settled | Refunded), balance-delta DSL

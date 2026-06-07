@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This repo contains essential programs for the **Logos Execution Zone (LEZ)** — a zkVM-based execution environment built on [RISC Zero](https://risczero.com/). Programs run inside the RISC Zero zkVM (`riscv32im-risc0-zkvm-elf` target) and interact with the LEZ runtime via the `nssa_core` library from `logos-execution-zone`.
+This repo contains essential programs for the **Logos Execution Zone (LEZ)** - a zkVM-based execution environment built on [RISC Zero](https://risczero.com/). Programs run inside the RISC Zero zkVM (`riscv32im-risc0-zkvm-elf` target) and interact with the LEZ runtime via the `nssa_core` library from `logos-execution-zone`.
 
 Two programs are implemented:
-- **token** — Fungible and non-fungible token program (create, mint, burn, transfer, print NFTs)
-- **amm** — Automated market maker (constant product AMM with add/remove liquidity and swaps)
+- **token** - Fungible and non-fungible token program (create, mint, burn, transfer, print NFTs)
+- **amm** - Automated market maker (constant product AMM with add/remove liquidity and swaps)
 
 ## Build Commands
 
@@ -35,7 +35,7 @@ Built binaries output to: `<program>/methods/guest/target/riscv32im-risc0-zkvm-e
 
 ## IDL Generation
 
-Using the `idl-gen` crate (no external toolchain required — this is what CI uses):
+Using the `idl-gen` crate (no external toolchain required - this is what CI uses):
 
 ```bash
 cargo run -p idl-gen -- token/methods/guest/src/bin/token.rs > artifacts/token-idl.json
@@ -87,13 +87,13 @@ amm/
 
 Each program follows a layered pattern:
 
-1. **`*_core` crate** — shared types (Instructions, account data structs) serialized with Borsh for on-chain storage, serde for instruction passing. Also contains PDA seed computation (amm_core).
+1. **`*_core` crate** - shared types (Instructions, account data structs) serialized with Borsh for on-chain storage, serde for instruction passing. Also contains PDA seed computation (amm_core).
 
-2. **Program crate** — pure functions that take `AccountWithMetadata` inputs and return `Vec<AccountPostState>` (and `Vec<ChainedCall>` for AMM). No I/O or state — all state transitions are deterministic and testable without the zkVM.
+2. **Program crate** - pure functions that take `AccountWithMetadata` inputs and return `Vec<AccountPostState>` (and `Vec<ChainedCall>` for AMM). No I/O or state - all state transitions are deterministic and testable without the zkVM.
 
-3. **`methods/guest`** — the guest binary wired to the LEZ framework via `spel-framework` using the `#[lez_program]` and `#[instruction]` proc macros. This is what gets compiled to RISC-V and ZK-proven.
+3. **`methods/guest`** - the guest binary wired to the LEZ framework via `spel-framework` using the `#[lez_program]` and `#[instruction]` proc macros. This is what gets compiled to RISC-V and ZK-proven.
 
-4. **`methods`** — host crate that embeds the guest ELF for use in tests and deployment.
+4. **`methods`** - host crate that embeds the guest ELF for use in tests and deployment.
 
 ## Key Patterns
 
@@ -101,6 +101,6 @@ Each program follows a layered pattern:
 
 **Program-Derived Addresses (PDAs)**: The AMM uses SHA-256-based PDAs (`compute_pool_pda`, `compute_vault_pda`, `compute_liquidity_token_pda` in `amm_core`) to derive deterministic account addresses for pools, vaults, and liquidity tokens.
 
-**Chained calls**: The AMM's swap and liquidity operations compose with the token program via `ChainedCall` — the AMM instructs the token program to execute transfers as part of the same atomic operation.
+**Chained calls**: The AMM's swap and liquidity operations compose with the token program via `ChainedCall` - the AMM instructs the token program to execute transfers as part of the same atomic operation.
 
 **Testing**: Tests call program functions directly (no zkVM overhead). Set `RISC0_DEV_MODE=1` to skip ZK proof generation when running integration tests that go through the zkVM. The Rust toolchain pinned version is **1.91.1**.

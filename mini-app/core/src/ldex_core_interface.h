@@ -28,7 +28,7 @@ public:
 
     /**
      * Offline wallet-ffi linkage probe: drives the real LEZ wallet (Rust)
-     * through the C ABI — create_new -> create_account_public -> destroy —
+     * through the C ABI - create_new -> create_account_public -> destroy -
      * with no sequencer. Returns the new public account id (hex) or an error.
      */
     Q_INVOKABLE virtual QString walletProbe() = 0;
@@ -42,7 +42,7 @@ public:
 
     /**
      * Fee-tier-aware AMM pool PDA for (token_a, token_b, fee_bps), via the
-     * ldex_amm_ffi shim. Pure (no wallet/sequencer) — validates the AMM
+     * ldex_amm_ffi shim. Pure (no wallet/sequencer) - validates the AMM
      * shim links into this module and that fee-tier PDAs differ per tier.
      * All ids are 64-hex (32 bytes). Returns the pool id hex or an error.
      */
@@ -52,7 +52,7 @@ public:
                                           int feeBps) = 0;
 
     /** One-click dev setup: returns the contents of scripts/bootstrap.env
-     *  (KEY=VALUE lines) so the UI can auto-fill — the user pastes nothing.
+     *  (KEY=VALUE lines) so the UI can auto-fill - the user pastes nothing.
      *  Native file read (the core module is not sandboxed; QML is). */
     Q_INVOKABLE virtual QString devBootstrap() = 0;
 
@@ -77,7 +77,7 @@ public:
      *  [{"fee":N,"exists":bool,"reserve_a":"..","reserve_b":"..",
      *    "lp_supply":".."}, ...]. */
     Q_INVOKABLE virtual QString pools() = 0;
-    /** Token-agnostic counterparts of the env-pair methods — take
+    /** Token-agnostic counterparts of the env-pair methods - take
      *  explicit token-definition / holding hex ids so the mini-app can
      *  trade against any pool that exists on chain, not just the
      *  bootstrap TOKENA/TOKENB pair. All hex args are 64 hex chars
@@ -139,7 +139,7 @@ public:
      *  either WLEZ::Wrap → AMM::Swap → reshield (NativeIn) or deshield
      *  → AMM::Swap → WLEZ::Unwrap (NativeOut), removing one block wait
      *  and one tx round-trip vs. the two-tx wrap-then-swap flow, plus
-     *  giving wrap+swap atomicity. Always router-mode (mode 2) — the
+     *  giving wrap+swap atomicity. Always router-mode (mode 2) - the
      *  routerless `PrivateOwned` path has no batched variant because it
      *  operates from user-owned private holdings directly. `config`
      *  packs `"<direction>|<token_def>|<priv_holding>"` into one string:
@@ -154,7 +154,7 @@ public:
                                                      const QString& minOut,
                                                      int feeBps) = 0;
     /** Non-blocking variant of `privateSwapNativeFor`. Same job-pump as
-     *  `privateSwapForStart` — returns `"job=<N>"`, poll `jobStatus`. */
+     *  `privateSwapForStart` - returns `"job=<N>"`, poll `jobStatus`. */
     Q_INVOKABLE virtual QString privateSwapNativeForStart(const QString& config,
                                                           const QString& amountIn,
                                                           const QString& minOut,
@@ -164,7 +164,7 @@ public:
     /** Current native-LEZ balance of `LDEX_USER_OWNER` as a decimal
      *  string. Always returns a string (returns `"0"` if env isn't
      *  loaded). The UI surfaces this as the "LEZ" balance in the
-     *  catalog — under the hood it's the user's native account
+     *  catalog - under the hood it's the user's native account
      *  balance, separate from any WLEZ token holdings. */
     Q_INVOKABLE virtual QString nativeBalance() = 0;
     /** Lock `amount` native LEZ in the WLEZ vault and mint `amount`
@@ -177,7 +177,7 @@ public:
     Q_INVOKABLE virtual QString unwrapNative(const QString& amount) = 0;
     /** Move `amount` WLEZ from `ATA(USER, WLEZ_DEF)` into the keypair
      *  `HOLD_W`. Needed because `WLEZ::Unwrap` requires
-     *  `user_holding.is_authorized` — only satisfiable by a keypair
+     *  `user_holding.is_authorized` - only satisfiable by a keypair
      *  account the wallet can sign for (ATAs are PDA-owned). */
     Q_INVOKABLE virtual QString consolidateWlezToHoldW(const QString& amount) = 0;
     /** Manual shield: move `amount` of TOKEN<letter> from the user's
@@ -198,13 +198,13 @@ public:
      *  calls this on a throttled timer + after each action. */
     Q_INVOKABLE virtual QString syncPrivateBalances() = 0;
 
-    /** RFP Usability #3 — pool analytics, AGGREGATE ONLY (no individual
+    /** RFP Usability #3 - pool analytics, AGGREGATE ONLY (no individual
      *  positions). JSON {"pools":[{"fee":N,"exists":bool,"tvlA","tvlB",
      *  "volA","volB","feeRevA","feeRevB","samples"}, ...],
      *  "agg":{"tvlA","tvlB","volA","volB","feeRevA","feeRevB",
      *  "activePools"}}. TVL = exact on-chain reserves; vol/fee = approx
      *  reserve-delta over the on-chain-sourced feed. Now consumed only
-     *  by the Pools list sort/enrichment — the per-pool detail view
+     *  by the Pools list sort/enrichment - the per-pool detail view
      *  reads each pool's exact stats from `poolInfoFor` directly. */
     Q_INVOKABLE virtual QString analytics() = 0;
 
@@ -223,13 +223,13 @@ public:
     // --- Signed AMM ops ---
     // Wallet/AMM/holding ids come from the cached dev env (devBootstrap or
     // lazy-loaded from scripts/bootstrap.env). The token-agnostic
-    // variants (`*For`) are what the UI dispatches against any pair —
+    // variants (`*For`) are what the UI dispatches against any pair -
     // the fixed env-pair-only entry points (`createPool` / `swapExactIn`
     // / `swapExactInAta` / `privateSwap` / `quote`) have been retired;
     // use `createPoolFor` / `swapExactInAtaFor` / `privateSwapFor` /
     // `quoteFor` instead.
     /** Private liquidity (RFP Func #2). mode: 0 = Public (delegates to
-     *  addLiquidity/removeLiquidity), 1 = Private (PrivateOwned —
+     *  addLiquidity/removeLiquidity), 1 = Private (PrivateOwned -
      *  holdings deshielded in-circuit, LP minted/burned in the public
      *  pool, outputs re-shielded; LP position public, owner untraceable).
      *  Same proven mechanism as privateSwap mode 1. */

@@ -106,7 +106,7 @@ QString LdexCorePlugin::walletProbe()
     if (err == SUCCESS) {
         const QByteArray hex =
             QByteArray(reinterpret_cast<const char*>(id.data), 32).toHex();
-        out = QStringLiteral("ldex_core wallet-ffi OK — new public account 0x%1")
+        out = QStringLiteral("ldex_core wallet-ffi OK - new public account 0x%1")
                   .arg(QString::fromLatin1(hex));
     } else {
         out = QStringLiteral("walletProbe: create_account_public failed "
@@ -155,11 +155,11 @@ QString LdexCorePlugin::chainHeight()
 
     QString out;
     if (err == SUCCESS) {
-        out = QStringLiteral("ldex_core chain OK — sequencer block height = %1")
+        out = QStringLiteral("ldex_core chain OK - sequencer block height = %1")
                   .arg(static_cast<qulonglong>(height));
     } else {
         out = QStringLiteral("chainHeight: wallet_ffi_get_current_block_height "
-                             "failed (WalletFfiError=%1) — is the local "
+                             "failed (WalletFfiError=%1) - is the local "
                              "sequencer running on 127.0.0.1:3040?")
                   .arg(static_cast<int>(err));
     }
@@ -232,7 +232,7 @@ QString hashHex(const unsigned char* h) {
     return QString::fromLatin1(
         QByteArray(reinterpret_cast<const char*>(h), 32).toHex());
 }
-// RFP Usability #5 — map FFI return codes to user-friendly, actionable
+// RFP Usability #5 - map FFI return codes to user-friendly, actionable
 // prose. `op` is a short verb the user recognises ("swap", "create the
 // pool", etc.). Stable for the UI; the technical code is appended for
 // support diagnostics.
@@ -240,10 +240,10 @@ QString rcMessage(const char* op, int rc) {
     QString hint;
     switch (rc) {
     case LDEX_AMM_ERR_NULL:
-        hint = QStringLiteral("a required value was missing — please retry");
+        hint = QStringLiteral("a required value was missing - please retry");
         break;
     case LDEX_AMM_ERR_WALLET:
-        hint = QStringLiteral("couldn't reach your LEZ wallet — check that "
+        hint = QStringLiteral("couldn't reach your LEZ wallet - check that "
                               "the sequencer is running and the bootstrap "
                               "config is loaded");
         break;
@@ -251,18 +251,18 @@ QString rcMessage(const char* op, int rc) {
         hint = QStringLiteral("a required account is missing or "
                               "uninitialized (e.g. the pool hasn't been "
                               "created yet, or a token holding wasn't "
-                              "initialized) — try creating the pool, or "
+                              "initialized) - try creating the pool, or "
                               "wait one block and retry");
         break;
     case LDEX_AMM_ERR_KEY:
         hint = QStringLiteral("your wallet doesn't have the signing key "
-                              "for one of the accounts — make sure you're "
+                              "for one of the accounts - make sure you're "
                               "the owner");
         break;
     case LDEX_AMM_ERR_SUBMIT:
         hint = QStringLiteral("the transaction was rejected. Common causes: "
                               "insufficient balance, slippage above your "
-                              "tolerance, or a stale snapshot — wait a "
+                              "tolerance, or a stale snapshot - wait a "
                               "block and retry, or lower the amount");
         break;
     case LDEX_AMM_ERR_UTF8:
@@ -326,7 +326,7 @@ QString LdexCorePlugin::walletImport(const QString& /*homeDir*/,
     // design.md §5.9 / task ④. For now use walletCreate, or point ops at the
     // bootstrap wallet (scripts/bootstrap.env).
     return QStringLiteral(
-        "walletImport: seed-phrase restore not yet wired — requires a "
+        "walletImport: seed-phrase restore not yet wired - requires a "
         "wallet_ffi_restore FFI (design.md §5.9). Use 'Create wallet' or "
         "the bootstrap wallet for now.");
 }
@@ -337,7 +337,7 @@ QString LdexCorePlugin::walletImport(const QString& /*homeDir*/,
 //   3. ./scripts/bootstrap.env (cwd-relative)
 //   4. ../scripts/bootstrap.env, ../../scripts/bootstrap.env (walk up
 //      from a plausible cwd like mini-app/ui or cli/)
-// No hardcoded user/install paths — public clones must work in any
+// No hardcoded user/install paths - public clones must work in any
 // directory layout.
 static QString envFilePath()
 {
@@ -394,7 +394,7 @@ AmmCtx loadCtx(const QHash<QString, QString>& e) {
     AmmCtx c;
     auto id = [&](const char* k, QByteArray& o) -> bool {
         if (!hex32(e.value(QString::fromLatin1(k)), o)) {
-            c.err = QStringLiteral("dev env missing/invalid %1 — click "
+            c.err = QStringLiteral("dev env missing/invalid %1 - click "
                                    "'Load dev setup'").arg(k);
             return false;
         }
@@ -403,7 +403,7 @@ AmmCtx loadCtx(const QHash<QString, QString>& e) {
     c.cfg = e.value("LDEX_WALLET_CONFIG").toUtf8();
     c.store = e.value("LDEX_WALLET_STORAGE").toUtf8();
     if (c.cfg.isEmpty() || c.store.isEmpty())
-        c.err = QStringLiteral("dev env missing wallet paths — 'Load dev setup'");
+        c.err = QStringLiteral("dev env missing wallet paths - 'Load dev setup'");
     else if (id("LDEX_AMM_PROGRAM_ID", c.amm) &&
              id("LDEX_AMM_V2_PROGRAM_ID", c.amm_v2) &&
              id("LDEX_USER_HOLDING_A", c.a) &&
@@ -419,7 +419,7 @@ AmmCtx loadCtx(const QHash<QString, QString>& e) {
 // Token-agnostic public swap. ATA-only (RFP Func #8): caller passes the
 // two pool definition ids (NOT keypair holdings) and the input def; the
 // FFI derives ATA(owner, def_a/def_b) from the env-bound owner. `config`
-// packs "<defA>|<defB>|<defIn>" — the SDK QtProviderObject dispatch caps
+// packs "<defA>|<defB>|<defIn>" - the SDK QtProviderObject dispatch caps
 // callModule arity at 5. Kept under the old name for QML compatibility;
 // internally now identical to swapExactInAtaFor.
 
@@ -521,7 +521,7 @@ QString LdexCorePlugin::privateSwapFor(const QString& config,
         return QStringLiteral("Load dev setup first (bootstrap.env not loaded).");
     AmmCtx c = loadCtx(m_env);
     if (!c.err.isEmpty()) return c.err;
-    // config = "<mode>|<direction>|<defA>|<defB>|<privA>|<privB>" — 6
+    // config = "<mode>|<direction>|<defA>|<defB>|<privA>|<privB>" - 6
     // pipe-delimited fields packed into one QString because the SDK
     // QtProviderObject dispatch caps callModule arity at 5.
     const QStringList parts = config.split(QChar('|'));
@@ -534,7 +534,7 @@ QString LdexCorePlugin::privateSwapFor(const QString& config,
     if (!okM || !okD)
         return QStringLiteral("privateSwapFor: mode and direction must be ints");
     if (mode == 0)
-        return QStringLiteral("privateSwapFor: mode 0 is public — route via "
+        return QStringLiteral("privateSwapFor: mode 0 is public - route via "
                               "swapExactInFor / swapExactInAtaFor instead.");
     if (mode != 1 && mode != 2)
         return QStringLiteral("privateSwapFor: unknown mode %1").arg(mode);
@@ -554,12 +554,12 @@ QString LdexCorePlugin::privateSwapFor(const QString& config,
         return QStringLiteral("privateSwapFor: amounts must be decimal integers");
 
     if (mode == 2) {
-        // Mode 2 — Private-Disposable (RFP-literal account-A model)
+        // Mode 2 - Private-Disposable (RFP-literal account-A model)
         // via **amm_v2**, the combined private-swap program.
         // amm_v2 inlines the router orchestration + AMM math into one
         // chained call; the upstream privacy circuit runs 5 chained
         // calls instead of 6 (saves 1 env::verify). Same on-chain
-        // observable shape — net-zero round-trip through fresh A
+        // observable shape - net-zero round-trip through fresh A
         // holdings preserves RFP AC#4. Testnet-compatible (no nssa
         // changes; amm_v2 is just a regular deployed LEZ program).
         // LIVE-VERIFIED on dev sequencer at ~18 min wall-clock for
@@ -567,7 +567,7 @@ QString LdexCorePlugin::privateSwapFor(const QString& config,
         QByteArray amm_v2;
         if (!hex32(m_env.value(QStringLiteral("LDEX_AMM_V2_PROGRAM_ID")), amm_v2))
             return QStringLiteral(
-                "Disposable: env missing LDEX_AMM_V2_PROGRAM_ID — "
+                "Disposable: env missing LDEX_AMM_V2_PROGRAM_ID - "
                 "amm_v2 not deployed/bootstrapped");
         WalletHandle* wh = wallet_ffi_open(c.cfg.constData(), c.store.constData());
         if (!wh) return QStringLiteral("Disposable: could not open wallet");
@@ -601,7 +601,7 @@ QString LdexCorePlugin::privateSwapFor(const QString& config,
             ? QStringLiteral("Private-Disposable swap submitted. tx=0x%1").arg(hashHex(tx))
             : rcMessage("submit the amm_v2 disposable swap", rc);
     }
-    // Mode 1 — PrivateOwned via amm_v2 (upstream privacy circuit
+    // Mode 1 - PrivateOwned via amm_v2 (upstream privacy circuit
     // chains amm_v2.SwapExactInputCircuit as the top-level call).
     unsigned char tx[32];
     const int rc = ldex_amm_v2_private_swap_exact_in(
@@ -683,7 +683,7 @@ QString LdexCorePlugin::jobStatus(int jobId)
 // ── Generic *Start dispatcher ────────────────────────────────────────
 // Reserve a job id, store "pending", spawn a detached std::thread that
 // runs `f()` and stores its result under that id. Returns "job=N"
-// immediately — caller must NEVER block the QObject's thread.
+// immediately - caller must NEVER block the QObject's thread.
 namespace {
 QString spawnJob(std::function<QString()> f, const char* tag) {
     auto& j = jobs();
@@ -825,7 +825,7 @@ QString LdexCorePlugin::privateSwapNativeFor(const QString& config,
     if (!parseU128(amountIn, ain) || !parseU128(minOut, mout))
         return QStringLiteral("Native swap: amounts must be decimal integers");
 
-    // Spin up two fresh public accounts (one per holding) — the
+    // Spin up two fresh public accounts (one per holding) - the
     // existing `disposable_swap_exact_in` flow uses the same shape; a
     // holding is itself a public account whose data is a TokenHolding.
     // For NativeIn:  aWlez = A's WLEZ holding (mint target);
@@ -950,7 +950,7 @@ QString LdexCorePlugin::nativeBalance()
     const auto rc = wallet_ffi_get_balance(h, &fid, /*is_public=*/true, &out_le);
     wallet_ffi_destroy(h);
     if (rc != SUCCESS) return QStringLiteral("0");
-    // Low 8 bytes — dev amounts fit comfortably in u64.
+    // Low 8 bytes - dev amounts fit comfortably in u64.
     qulonglong v = 0;
     for (int i = 7; i >= 0; --i) v = (v << 8) | out_le[i];
     return QString::number(v);
@@ -969,12 +969,12 @@ QString LdexCorePlugin::wrapNative(const QString& amount)
         return QStringLiteral("wrapNative: env missing LDEX_USER_OWNER");
     // Prefer ATA(USER, WLEZ_DEF) as the wrap destination so the newly
     // minted WLEZ is immediately spendable by mode-0 ATA swaps and
-    // ATA-side pool ops — without an extra token::Transfer. Falls back
+    // ATA-side pool ops - without an extra token::Transfer. Falls back
     // to the keypair HOLD_W if the bootstrap didn't wire the ATA (e.g.
     // pre-WLEZ-ATA bootstraps).
     const QString ataW = m_env.value("LDEX_ATA_W");
     if (!ataW.isEmpty() && hex32(ataW, target)) {
-        // ATA path — wrap lands directly in ATA(USER, WLEZ_DEF).
+        // ATA path - wrap lands directly in ATA(USER, WLEZ_DEF).
     } else if (!hex32(m_env.value("LDEX_HOLD_W"), target)) {
         return QStringLiteral("wrapNative: env missing LDEX_ATA_W and LDEX_HOLD_W");
     }
@@ -1035,7 +1035,7 @@ QString LdexCorePlugin::unwrapNative(const QString& amount)
         return QStringLiteral("unwrapNative: env missing LDEX_WLEZ_PROGRAM_ID");
     if (!hex32(m_env.value("LDEX_USER_OWNER"), ownerBytes))
         return QStringLiteral("unwrapNative: env missing LDEX_USER_OWNER");
-    // Unwrap drains the keypair WLEZ holding — WLEZ::Unwrap asserts
+    // Unwrap drains the keypair WLEZ holding - WLEZ::Unwrap asserts
     // `user_holding.is_authorized`, which requires a signing key the
     // wallet actually holds. ATA_W is PDA-owned by the ATA program;
     // the wallet can't sign for it directly. If the user has WLEZ in
@@ -1098,11 +1098,11 @@ QString LdexCorePlugin::consolidateWlezToHoldW(const QString& amount)
 // Manual shield: ATA(USER, DEF_<L>)  →  PRIV_<L>.
 // Routes through `ldex_token_shield` (LDEX-side FFI that wraps
 // `wallet.send_privacy_preserving_tx` with a token-program Transfer
-// instruction). Single privacy-preserving tx — generates a STARK
+// instruction). Single privacy-preserving tx - generates a STARK
 // in-wallet, then the sequencer verifies + lands it. We deliberately
 // do NOT use `wallet_ffi_transfer_shielded_owned`: that one targets
 // the native LEZ `authenticated_transfer_program` and checks
-// `account.balance` (the native field, always 0 on token holdings) —
+// `account.balance` (the native field, always 0 on token holdings) -
 // so it returns InsufficientFunds (rc=9) on every token shield attempt.
 QString LdexCorePlugin::shieldToken(const QString& letter, const QString& amount)
 {
@@ -1143,7 +1143,7 @@ QString LdexCorePlugin::deshieldToken(const QString& letter, const QString& amou
     AmmCtx c = loadCtx(m_env);
     if (!c.err.isEmpty()) return c.err;
     QByteArray from, to;
-    // Destination is HOLD_<L> (keypair) — recipient is just a credit
+    // Destination is HOLD_<L> (keypair) - recipient is just a credit
     // (no sender_authorization required for the recipient), and HOLD is
     // the bootstrap-initialised TokenHolding for this letter. The
     // wallet's pub-balance display sums HOLD+ATA, so the user sees the
@@ -1167,7 +1167,7 @@ QString LdexCorePlugin::deshieldToken(const QString& letter, const QString& amou
         : rcMessage(QStringLiteral("deshield TOKEN%1").arg(letter).toUtf8().constData(), rc);
 }
 
-// Token-agnostic quote — takes explicit def_a/def_b instead of using
+// Token-agnostic quote - takes explicit def_a/def_b instead of using
 // env's c.defA/c.defB. Constant-product math mirrors `quote()` exactly.
 QString LdexCorePlugin::quoteFor(const QString& defAHex, const QString& defBHex,
                                  int direction, const QString& amountIn,
@@ -1181,7 +1181,7 @@ QString LdexCorePlugin::quoteFor(const QString& defAHex, const QString& defBHex,
     if (!hex32(defAHex, da) || !hex32(defBHex, db))
         return QStringLiteral("{\"exists\":false}");
     // compute_pool_pda_seed in amm_core panics if defA == defB. Catch it
-    // here as an empty quote — a Rust panic across FFI takes down the
+    // here as an empty quote - a Rust panic across FFI takes down the
     // whole module process and poisons every subsequent call.
     if (da == db)
         return QStringLiteral("{\"exists\":false}");
@@ -1218,13 +1218,13 @@ QString LdexCorePlugin::quoteFor(const QString& defAHex, const QString& defBHex,
         .arg(f(out), f(feePaid), f(impact));
 }
 
-// RFP Func #8 — public swap where the user side is the user's
+// RFP Func #8 - public swap where the user side is the user's
 // deterministic ATA per (owner, definition). Chains `ata::Transfer` for
-// the input leg (owner-authorised — ATA program internally PDA-authorises
+// the input leg (owner-authorised - ATA program internally PDA-authorises
 // the sender ATA via its seed) + the existing vault-PDA-authorised
 // `token::Transfer` for the output leg into the recipient ATA. The FFI
 // derives both ATAs internally from owner + the two token defs via
-// `LDEX_ATA_PROGRAM_ID` — we mirror that env into the process here so the
+// `LDEX_ATA_PROGRAM_ID` - we mirror that env into the process here so the
 // FFI sees it.
 
 
@@ -1318,15 +1318,15 @@ QString LdexCorePlugin::privateAddLiquidity(int mode, const QString& minLp,
     AmmCtx c = loadCtx(m_env);
     if (!c.err.isEmpty()) return c.err;
     // Mode-1 LP needs PRIV holdings (PrivateOwned, wallet-owned) on all 3
-    // sides — TOKEN_A, TOKEN_B, and LP. Bootstrap creates PRIV_A/B; PRIV_LP
+    // sides - TOKEN_A, TOKEN_B, and LP. Bootstrap creates PRIV_A/B; PRIV_LP
     // isn't pre-created (LP tokens only exist after the first add). Lazy-
     // create PRIV_LP on first call + remember it in env so subsequent
     // remove-liquidity calls can decrypt the commitment.
     QByteArray privA, privB, privLp;
     if (!hex32(m_env.value("LDEX_PRIV_A"), privA))
-        return QStringLiteral("privateAddLiquidity: env missing LDEX_PRIV_A — re-bootstrap to seed private holdings.");
+        return QStringLiteral("privateAddLiquidity: env missing LDEX_PRIV_A - re-bootstrap to seed private holdings.");
     if (!hex32(m_env.value("LDEX_PRIV_B"), privB))
-        return QStringLiteral("privateAddLiquidity: env missing LDEX_PRIV_B — re-bootstrap to seed private holdings.");
+        return QStringLiteral("privateAddLiquidity: env missing LDEX_PRIV_B - re-bootstrap to seed private holdings.");
     if (!hex32(m_env.value("LDEX_PRIV_LP"), privLp)) {
         // Auto-create a fresh PrivateOwned account for the LP holding.
         WalletHandle* wh = wallet_ffi_open(c.cfg.constData(), c.store.constData());
@@ -1385,7 +1385,7 @@ QString LdexCorePlugin::privateRemoveLiquidity(int mode,
     if (!hex32(m_env.value("LDEX_PRIV_B"), privB))
         return QStringLiteral("privateRemoveLiquidity: env missing LDEX_PRIV_B");
     if (!hex32(m_env.value("LDEX_PRIV_LP"), privLp))
-        return QStringLiteral("privateRemoveLiquidity: env missing LDEX_PRIV_LP — add private liquidity first to seed it.");
+        return QStringLiteral("privateRemoveLiquidity: env missing LDEX_PRIV_LP - add private liquidity first to seed it.");
     ldex_u128 lpa, mna, mnb;
     if (!parseU128(lpAmount, lpa) || !parseU128(minA, mna) || !parseU128(minB, mnb))
         return QStringLiteral("privateRemoveLiquidity: amounts must be decimal integers");
@@ -1412,7 +1412,7 @@ QString LdexCorePlugin::devBootstrap()
     // user intentionally asks for it to be reloaded.)
     m_env.clear();
     if (!ensureEnv())
-        return QStringLiteral("ERR: %1 not found / no keys — run "
+        return QStringLiteral("ERR: %1 not found / no keys - run "
                               "scripts/bootstrap.sh (sequencer up).")
             .arg(envFilePath());
     QJsonObject obj;
@@ -1502,7 +1502,7 @@ QString LdexCorePlugin::analytics()
         for (int i = 0; i < 4; ++i) {
             unsigned char pbuf[512];
             // Single on-chain read: TVL + EXACT cumulative volume + EXACT
-            // cumulative LP fee revenue (RFP Usability #3) — both
+            // cumulative LP fee revenue (RFP Usability #3) - both
             // maintained on-chain by amm_v2's swap_logic path.
             const int prc = ldex_amm_pool_info(
                 c.cfg.constData(), c.store.constData(),
@@ -1557,7 +1557,7 @@ QString LdexCorePlugin::walletTokens()
 
     // NOTE: private (shielded) balance sync used to live here but it scans
     // every block from `last_synced` → `head` and that fires on EVERY
-    // walletTokens call — which is every Balances panel re-render. On a
+    // walletTokens call - which is every Balances panel re-render. On a
     // long-running chain that's hundreds-thousands of blocks per UI tick.
     // Sync was moved out to a dedicated Q_INVOKABLE that the QML calls on
     // a debounced timer + after every action; balances still update, just
@@ -1568,7 +1568,7 @@ QString LdexCorePlugin::walletTokens()
     //   - LDEX_ATA_<L>   deterministic ATA        (chain query)
     //   - LDEX_PRIV_<L>  PrivateOwned             (wallet local cache)
     // and (for the public ones) any other public accounts the wallet has
-    // that hold the same def — picks up disposable accounts left over from
+    // that hold the same def - picks up disposable accounts left over from
     // a Fast/Disposable swap. One row per letter so the Balances view
     // mirrors the catalog 1:1.
     // Public token holdings store the token amount in `account.data`
@@ -1591,12 +1591,12 @@ QString LdexCorePlugin::walletTokens()
                 QByteArray(reinterpret_cast<char*>(buf))).object();
             return o.value("balance").toString().toULongLong();
         }
-        // PrivateOwned token holdings — `wallet_ffi_get_balance(is_public=false)`
+        // PrivateOwned token holdings - `wallet_ffi_get_balance(is_public=false)`
         // returns the account's NATIVE LEZ balance, not the token amount.
         // Token holdings live in `account.data` (borsh-encoded TokenHolding;
         // for Fungible: [tag=0, def_id(32), balance_u128_le(16)] = 49 bytes).
         // Using get_balance here meant every shielded balance displayed as 0
-        // in the UI — the "shielding doesn't work" symptom. Read the
+        // in the UI - the "shielding doesn't work" symptom. Read the
         // private account via get_account_private and decode the data
         // field as TokenHolding::Fungible.
         FfiBytes32 fid; std::memcpy(fid.data, idBytes.constData(), 32);
@@ -1635,7 +1635,7 @@ QString LdexCorePlugin::walletTokens()
     }
 
     // Loose public accounts (disposable account-A holdings from a mode-2
-    // disposable swap, etc.) — sum into pub balance, skipping the
+    // disposable swap, etc.) - sum into pub balance, skipping the
     // canonical HOLD_/ATA_ ones we already counted.
     FfiAccountList list; list.entries = nullptr; list.count = 0;
     if (wallet_ffi_list_accounts(h, &list) == SUCCESS) {

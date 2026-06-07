@@ -123,7 +123,7 @@ run_test discover             --endpoint "http://127.0.0.1:$PORT1" --test discov
 # Confirm bearer auth: unauthenticated POST /v0/elf to prover2 must 401, authenticated must 201
 echo
 echo "================ test: elf-auth ================"
-ELF_BYTES=$(printf '%s' 'placeholder ELF bytes — wrong digest, expect 400 not 401')
+ELF_BYTES=$(printf '%s' 'placeholder ELF bytes - wrong digest, expect 400 not 401')
 UNAUTH=$(curl -k -s -o /dev/null -w "%{http_code}" -X POST -H "content-type: application/octet-stream" \
     --data-binary "$ELF_BYTES" "https://127.0.0.1:$PORT2/v0/elf/0000000000000000000000000000000000000000000000000000000000000000")
 AUTH=$(curl -k -s -o /dev/null -w "%{http_code}" -X POST -H "content-type: application/octet-stream" \

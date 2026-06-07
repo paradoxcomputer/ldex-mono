@@ -35,7 +35,7 @@ echo "$JOB_OUTPUT" | grep PASS
 # Grab the most recent job_id from the prover log (ANSI-stripped via NO_COLOR=1)
 JOB_ID=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' /tmp/psy-persist.log | tail -1)
 if [[ -z "$JOB_ID" ]]; then
-    echo "[persist] FAIL — could not find a job_id in prover log" >&2
+    echo "[persist] FAIL - could not find a job_id in prover log" >&2
     cat /tmp/psy-persist.log >&2
     exit 1
 fi
@@ -53,9 +53,9 @@ launch
 STATUS=$(curl -fsS "http://127.0.0.1:$PORT/v0/jobs/$JOB_ID")
 echo "[persist] post-restart status: $(echo "$STATUS" | head -c 80)..."
 if echo "$STATUS" | grep -q '"state":"done"'; then
-    echo "[persist] PASS — Done status survived restart"
+    echo "[persist] PASS - Done status survived restart"
 else
-    echo "[persist] FAIL — expected state=done"
+    echo "[persist] FAIL - expected state=done"
     echo "[persist] full response: $STATUS"
     exit 1
 fi

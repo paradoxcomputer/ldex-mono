@@ -79,13 +79,13 @@ fn e2e_new_pool_against_running_sequencer() {
         if rc == ldex_amm_ffi::LDEX_AMM_OK {
             assert_ne!(tx_hash, [0u8; 32], "expected a non-zero tx hash");
             eprintln!(
-                "OK — pool-create tx hash = {}",
+                "OK - pool-create tx hash = {}",
                 tx_hash.iter().map(|b| format!("{b:02x}")).collect::<String>()
             );
             return;
         }
         if rc != ldex_amm_ffi::LDEX_AMM_ERR_ACCOUNT {
-            break; // a non-timing error — fail fast with the code
+            break; // a non-timing error - fail fast with the code
         }
         std::thread::sleep(std::time::Duration::from_secs(10));
     }

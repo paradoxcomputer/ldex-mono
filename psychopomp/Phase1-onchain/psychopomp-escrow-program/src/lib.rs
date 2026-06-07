@@ -6,7 +6,7 @@
 //!
 //! Balance-delta application (transferring LEZ between client, operator, and
 //! the burn sink) is the GUEST's job once it has the `Vec<BalanceDelta>`
-//! returned here — see the methods/guest/ binary for the chained-call
+//! returned here - see the methods/guest/ binary for the chained-call
 //! plumbing that does that.
 
 use borsh::BorshDeserialize;
@@ -50,7 +50,7 @@ pub fn apply_to_account(
         Some(JobState::try_from_slice(bytes)?)
     };
     let was_empty = current.is_none();
-    // Snapshot the operator_pk BEFORE applying — Fault zeroes the awarded
+    // Snapshot the operator_pk BEFORE applying - Fault zeroes the awarded
     // state, so we need to look at the prior status to know who to slash.
     let prior_operator_pk: Option<[u8; 32]> = current
         .as_ref()

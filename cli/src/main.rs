@@ -1,4 +1,4 @@
-//! ldex — command-line client for the LDEX privacy DEX on Logos
+//! ldex - command-line client for the LDEX privacy DEX on Logos
 //!
 //! Mirrors every mini-app feature behind the same FFI the QML uses.
 //! Source `scripts/bootstrap.env` (or pass `--env-file`) and run any
@@ -25,7 +25,7 @@
 //!   env                     dump the resolved environment
 //!
 //! All chain-mutating commands print the resulting tx hash on success.
-//! Private/Disposable swaps + shield/deshield take 3–25 min CPU.
+//! Private/Disposable swaps + shield/deshield take 3-25 min CPU.
 
 use clap::{Parser, Subcommand};
 use std::collections::HashMap;
@@ -40,7 +40,7 @@ use std::time::Instant;
 // All FFI signatures verified against ffi/ldex-amm-ffi/src/submit.rs.
 // Most ATA-flavoured functions auto-derive the AMM/TOKEN/ATA program ids
 // from process env vars (LDEX_AMM_V2_PROGRAM_ID, LDEX_TOKEN_PROGRAM_ID,
-// LDEX_ATA_PROGRAM_ID) — see `ata_env_ctx` in submit.rs. The CLI exports
+// LDEX_ATA_PROGRAM_ID) - see `ata_env_ctx` in submit.rs. The CLI exports
 // every bootstrap.env key to the process env before calling any FFI.
 #[link(name = "ldex_amm_ffi")]
 extern "C" {
@@ -132,7 +132,7 @@ extern "C" {
 }
 
 // FfiAccount layout (matches wallet_ffi.h). FfiProgramId is 32 bytes (8 × u32),
-// not 8 — getting that wrong shifts the data pointer.
+// not 8 - getting that wrong shifts the data pointer.
 #[repr(C)]
 struct WalletHandle { _o: [u8; 0] }
 #[repr(C)]
@@ -203,7 +203,7 @@ impl Env {
                 map.insert(k, v);
             }
         }
-        // Export every key to the process env — the FFI reads
+        // Export every key to the process env - the FFI reads
         // LDEX_AMM_V2_PROGRAM_ID / LDEX_TOKEN_PROGRAM_ID / LDEX_ATA_PROGRAM_ID /
         // LDEX_ROUTER_PROGRAM_ID / etc. from std::env::var inside ata_env_ctx
         // and similar helpers. Without this, every chain-mutating ATA call
@@ -591,7 +591,7 @@ fn cmd_balance(env: &Env, all: bool, auto_sync: bool) -> Result<(), String> {
         let hold_w = env.opt_acct_id("LDEX_HOLD_W").map(|a| balance_public_token(env, &a)).unwrap_or(0);
         let ata_w = env.opt_acct_id("LDEX_ATA_W").map(|a| balance_public_token(env, &a)).unwrap_or(0);
         println!("{:8}  {:>14}  {:>14}  {:>14}  {:>14}",
-                 "LEZ/WLEZ", lez, format!("{}+{}", hold_w, ata_w), "—", lez + hold_w + ata_w);
+                 "LEZ/WLEZ", lez, format!("{}+{}", hold_w, ata_w), "-", lez + hold_w + ata_w);
     }
     for letter in &letters {
         let hold = env.opt_acct_id(&format!("LDEX_HOLD_{letter}")).map(|a| balance_public_token(env, &a)).unwrap_or(0);
@@ -755,7 +755,7 @@ fn cmd_shield(env: &Env, token: &str, amount: u128) -> Result<(), String> {
         .ok_or_else(|| format!("shield needs a TOKEN letter or LEZ, got {token}"))?;
     let hold = env.acct_id(&format!("LDEX_HOLD_{letter}"))?;
     let prv  = env.acct_id(&format!("LDEX_PRIV_{letter}"))?;
-    println!("shielding {amount} TOKEN{letter} (real STARK — typically 3–5 min)...");
+    println!("shielding {amount} TOKEN{letter} (real STARK - typically 3-5 min)...");
     let mut tx = [0u8; 32];
     let t0 = Instant::now();
     let rc = unsafe {
@@ -773,7 +773,7 @@ fn cmd_deshield(env: &Env, token: &str, amount: u128) -> Result<(), String> {
         .ok_or_else(|| format!("deshield needs a TOKEN letter, got {token}"))?;
     let prv = env.acct_id(&format!("LDEX_PRIV_{letter}"))?;
     let hold = env.acct_id(&format!("LDEX_HOLD_{letter}"))?;
-    println!("deshielding {amount} TOKEN{letter} (real STARK — typically 3–5 min)...");
+    println!("deshielding {amount} TOKEN{letter} (real STARK - typically 3-5 min)...");
     let mut tx = [0u8; 32];
     let t0 = Instant::now();
     let rc = unsafe {
@@ -793,8 +793,8 @@ fn cmd_swap(env: &Env, pay: &str, get: &str, amount: u128,
     // order-independent (the seed sorts the two def ids), so a single
     // probe returns the canonical pool regardless of (pay, get) order;
     // `pool_info` reports the pool's *stored* token_a via `token_a_def`.
-    // `pay_is_a` must reflect that stored leg order — NOT the probe arg
-    // order — so reserve_in/out (and thus min_out) and the (def_a, def_b)
+    // `pay_is_a` must reflect that stored leg order - NOT the probe arg
+    // order - so reserve_in/out (and thus min_out) and the (def_a, def_b)
     // we pass to the swap FFI all line up with the pool's canonical token A.
     let q = pool_info_json(env, &tp.def_id, &tg.def_id, fee);
     if !q.get("exists").and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -804,7 +804,7 @@ fn cmd_swap(env: &Env, pay: &str, get: &str, amount: u128,
     let ra: u128 = q["reserve_a"].as_str().unwrap_or("0").parse().unwrap_or(0);
     let rb: u128 = q["reserve_b"].as_str().unwrap_or("0").parse().unwrap_or(0);
     let (r_in, r_out) = if pay_is_a { (ra, rb) } else { (rb, ra) };
-    // MED: a slippage >= 100% (or negative) collapses min_out to 0 — silently
+    // MED: a slippage >= 100% (or negative) collapses min_out to 0 - silently
     // disabling slippage protection. Reject it.
     if !(0.0..100.0).contains(&slip_pct) {
         return Err(format!("slippage percent must be in [0, 100), got {slip_pct}"));
@@ -848,7 +848,7 @@ fn cmd_swap(env: &Env, pay: &str, get: &str, amount: u128,
             let priv_b_letter = if pay_is_a { lg } else { lp };
             let priv_a = env.acct_id(&format!("LDEX_PRIV_{priv_a_letter}"))?;
             let priv_b = env.acct_id(&format!("LDEX_PRIV_{priv_b_letter}"))?;
-            println!("private swap (mode-1 PrivateOwned — STARK ~10–15 min)...");
+            println!("private swap (mode-1 PrivateOwned - STARK ~10-15 min)...");
             unsafe {
                 ldex_amm_v2_private_swap_exact_in(env.cfg.as_ptr(), env.store.as_ptr(),
                     amm.as_ptr(),
@@ -866,7 +866,7 @@ fn cmd_swap(env: &Env, pay: &str, get: &str, amount: u128,
             let priv_a = env.acct_id(&format!("LDEX_PRIV_{priv_a_letter}"))?;
             let priv_b = env.acct_id(&format!("LDEX_PRIV_{priv_b_letter}"))?;
             // a_holding_a/b are the FRESH single-use account-A holdings the
-            // disposable saga deshields into and re-shields from — typed to the
+            // disposable saga deshields into and re-shields from - typed to the
             // pool-canonical def_a / def_b. The FFI does NOT create them: it
             // reads them as real account ids. They must be freshly allocated per
             // swap (e.g. via `w account new-public` + ATA init for def_a/def_b)
@@ -880,7 +880,7 @@ fn cmd_swap(env: &Env, pay: &str, get: &str, amount: u128,
                 "disposable swap needs fresh account-A holdings: set LDEX_A_A (for def_a) and \
                  LDEX_A_B (for def_b) to freshly-allocated, ATA-initialised public holdings".to_string()
             })?;
-            println!("disposable swap (mode-2 fresh A — STARK ~15–25 min)...");
+            println!("disposable swap (mode-2 fresh A - STARK ~15-25 min)...");
             unsafe {
                 ldex_amm_v2_disposable_swap(env.cfg.as_ptr(), env.store.as_ptr(),
                     amm.as_ptr(),
@@ -903,7 +903,7 @@ fn cmd_pool_create(env: &Env, a: &str, b: &str, fee: u128,
     let ta = resolve_token(env, a)?;
     let tb = resolve_token(env, b)?;
     let owner = env.acct_id("LDEX_USER_OWNER")?;
-    // Pool create takes user_holding_a / user_holding_b — the public
+    // Pool create takes user_holding_a / user_holding_b - the public
     // holdings funding the initial liquidity. Use the letter-derived
     // HOLD_<L>; bootstrap creates them.
     let la = ta.letter.as_deref().ok_or("pool-create needs token letters")?;
@@ -952,7 +952,7 @@ fn cmd_liq_add(env: &Env, a: &str, b: &str, amt_a: u128, amt_b: u128,
             let priv_a = env.acct_id(&format!("LDEX_PRIV_{la}"))?;
             let priv_b = env.acct_id(&format!("LDEX_PRIV_{lb}"))?;
             let priv_lp = env.opt_acct_id("LDEX_PRIV_LP")
-                .ok_or("LDEX_PRIV_LP missing — bootstrap may not have created the priv-LP holding")?;
+                .ok_or("LDEX_PRIV_LP missing - bootstrap may not have created the priv-LP holding")?;
             println!("private add-liq (STARK ~20+ min)...");
             unsafe {
                 ldex_amm_v2_private_add_liquidity(env.cfg.as_ptr(), env.store.as_ptr(),
@@ -1051,7 +1051,7 @@ fn resolve_wallet_bin() -> Result<String, String> {
 }
 
 // Shell out to the LEZ wallet CLI. The wallet binary lives in the
-// LEZ source tree (clone separately — see SETUP.md). Resolved via
+// LEZ source tree (clone separately - see SETUP.md). Resolved via
 // `resolve_wallet_bin` from env vars or a conventional path.
 fn wallet_run(env: &Env, args: &[&str]) -> Result<String, String> {
     let pw = env.get("LDEX_WALLET_PW").unwrap_or("ldexdev");

@@ -4,9 +4,9 @@
 # Steps:
 #  1. Pre-create the user's LP ATA so amm_v2 can mint into it.
 #  2. Create amm_v2 pool via ATA-only path (100_000 / 100_000 at 30 bps).
-#  3. Mode 0 — public swap via amm_v2 ATA path (v2pubswap_ata, ~15 s).
-#  4. Mode 1 — PrivateOwned private swap via amm_v2 (v2swap1, ~10 m CPU).
-#  5. Mode 2 — Disposable swap via amm_v2 (v2disp, ~14 m CPU).
+#  3. Mode 0 - public swap via amm_v2 ATA path (v2pubswap_ata, ~15 s).
+#  4. Mode 1 - PrivateOwned private swap via amm_v2 (v2swap1, ~10 m CPU).
+#  5. Mode 2 - Disposable swap via amm_v2 (v2disp, ~14 m CPU).
 #  6. Verify on-chain deltas via wallet `account get` for each step.
 
 set -euo pipefail
@@ -36,7 +36,7 @@ sleep 18
 echo "    HOLD_A after pool create:"; show "$LDEX_USER_HOLDING_A"
 echo "    HOLD_B after pool create:"; show "$LDEX_USER_HOLDING_B"
 
-echo "==[3] MODE 0 (ATA-only swap via amm_v2) — 10 TOKENA → ?"
+echo "==[3] MODE 0 (ATA-only swap via amm_v2) - 10 TOKENA → ?"
 "$E2E" v2pubswap_ata "$LDEX_WALLET_CONFIG" "$LDEX_WALLET_STORAGE" \
     "$LDEX_AMM_V2_PROGRAM_ID" \
     "$LDEX_ATA_PROGRAM_ID" "$LDEX_USER_OWNER" \
@@ -49,7 +49,7 @@ echo "    ATA_B after mode-0:"; show "$LDEX_ATA_B"
 echo "==[4] sync wallet private state before private swaps"
 w account sync-private >/dev/null 2>&1 || true
 
-echo "==[5] MODE 1 (PrivateOwned via amm_v2) — 100 TOKENA → ?"
+echo "==[5] MODE 1 (PrivateOwned via amm_v2) - 100 TOKENA → ?"
 T0=$(date +%s)
 unset RISC0_DEV_MODE
 "$E2E" v2swap1 "$LDEX_WALLET_CONFIG" "$LDEX_WALLET_STORAGE" \
@@ -74,7 +74,7 @@ sleep 18
 "$E2E" init "$LDEX_WALLET_CONFIG" "$LDEX_WALLET_STORAGE" "$LDEX_ATA_PROGRAM_ID" "$LDEX_DEF_B" "$A_B"
 sleep 18
 
-echo "==[7] MODE 2 (Disposable via amm_v2) — 100 TOKENA → ?"
+echo "==[7] MODE 2 (Disposable via amm_v2) - 100 TOKENA → ?"
 T2=$(date +%s)
 "$E2E" v2disp "$LDEX_WALLET_CONFIG" "$LDEX_WALLET_STORAGE" \
     "$LDEX_AMM_V2_PROGRAM_ID" "$LDEX_PRIV_A" "$LDEX_PRIV_B" \
@@ -101,7 +101,7 @@ grep -E 'InvalidPrivacyPreservingProof|InvalidProof|panicked|failed execution ch
 
 echo "==[9] WLEZ + ATA: pool create TOKEN_A/WLEZ via new_pool_ata"
 if [ -n "${LDEX_HOLD_W:-}" ] && [ -n "${LDEX_ATA_W:-}" ]; then
-    # 2000 of each — must exceed amm_v2's MINIMUM_LIQUIDITY=1000
+    # 2000 of each - must exceed amm_v2's MINIMUM_LIQUIDITY=1000
     # (initial_lp = sqrt(amount_a · amount_b)). Bootstrap pre-wraps
     # 5000 native LEZ → ~2000 to ATA_W (40%) and ~3000 to HOLD_W (60%);
     # HOLD_W has enough headroom to seed this pool.
@@ -124,7 +124,7 @@ if [ -n "${LDEX_HOLD_W:-}" ] && [ -n "${LDEX_ATA_W:-}" ]; then
     echo "    ATA_W after WLEZ swap:"; show "$LDEX_ATA_W"
     echo "    ATA_A after WLEZ swap:"; show "$LDEX_ATA_A"
 else
-    echo "    (skipped — LDEX_HOLD_W / LDEX_ATA_W not in env)"
+    echo "    (skipped - LDEX_HOLD_W / LDEX_ATA_W not in env)"
 fi
 
 echo "==[DONE]"

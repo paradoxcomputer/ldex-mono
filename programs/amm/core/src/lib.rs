@@ -138,7 +138,7 @@ pub enum Instruction {
     /// - Vault Holding Account for Token B (initialized)
     SyncReserves,
 
-    /// RFP Func #8 — swap_exact_in but with the user side using
+    /// RFP Func #8 - swap_exact_in but with the user side using
     /// **Associated Token Accounts (ATAs)** instead of keypair token
     /// holdings. Chains `ata::Transfer` (owner-authorized, ATA program
     /// internally PDA-authorizes the sender ATA) for the input leg, and a
@@ -149,7 +149,7 @@ pub enum Instruction {
     /// - AMM Pool (initialized)
     /// - Vault Holding Account for Token A (initialized)
     /// - Vault Holding Account for Token B (initialized)
-    /// - Owner Account (signer — authorizes the ATA spend)
+    /// - Owner Account (signer - authorizes the ATA spend)
     /// - User ATA for Token A (must equal `for_public_pda(ata_pid,
     ///   sha256(owner ‖ def_a))`)
     /// - User ATA for Token B (same derivation rule with def_b)
@@ -158,7 +158,7 @@ pub enum Instruction {
         swap_amount_in: u128,
         min_amount_out: u128,
         token_definition_id_in: AccountId,
-        /// ATA program id — needed to dispatch the chained `ata::Transfer`
+        /// ATA program id - needed to dispatch the chained `ata::Transfer`
         /// for the input leg. (We can't read it from `ata_a.program_owner`
         /// because ATAs are token holdings owned by the *token* program;
         /// the ATA program holds PDA authority, not storage ownership.)
@@ -167,7 +167,7 @@ pub enum Instruction {
         deadline: u64,
     },
 
-    /// RFP Func #8 — `SwapExactOutput` with the user side using ATAs.
+    /// RFP Func #8 - `SwapExactOutput` with the user side using ATAs.
     /// Same account layout & chaining strategy as `SwapExactInputAta`.
     SwapExactOutputAta {
         exact_amount_out: u128,
@@ -177,7 +177,7 @@ pub enum Instruction {
         deadline: u64,
     },
 
-    /// RFP Func #8 — `AddLiquidity` with the user side using ATAs.
+    /// RFP Func #8 - `AddLiquidity` with the user side using ATAs.
     /// The deposit legs go through `ata::Transfer` (owner-authorised); the
     /// LP mint into the user's ATA-LP uses the existing PDA-authorised
     /// `token::Mint` (recipient is just a Fungible token holding).
@@ -186,7 +186,7 @@ pub enum Instruction {
     /// - AMM Pool (initialised)
     /// - Vault A (initialised), Vault B (initialised)
     /// - Pool LP token-definition (PDA)
-    /// - Owner account (signer — authorises the ATA spends)
+    /// - Owner account (signer - authorises the ATA spends)
     /// - User ATA for Token A, B, and LP (all deterministic from
     ///   `(owner, definition)` via the ATA program)
     /// - Clock account (read-only, oracle update)
@@ -200,14 +200,14 @@ pub enum Instruction {
 
     /// Like `SwapExactInput` but **without** the clock account in
     /// pre-state. The on-chain TWAP price oracle (§5.11③) is **not**
-    /// updated for swaps that take this path — the swap math, the
+    /// updated for swaps that take this path - the swap math, the
     /// reserve update, the volume / fee accumulators, and the chained
     /// token transfers all run identically to `SwapExactInput`; only
     /// the oracle ring + `block_ts_last` carry over unchanged from
     /// pre to post. Public swaps (mode 0) keep using `SwapExactInput`
     /// so the TWAP stays fed.
     ///
-    /// Required accounts (one fewer than `SwapExactInput` — no clock):
+    /// Required accounts (one fewer than `SwapExactInput` - no clock):
     /// - AMM Pool (initialized)
     /// - Vault Holding Account for Token A
     /// - Vault Holding Account for Token B
@@ -218,7 +218,7 @@ pub enum Instruction {
     /// privacy-preserving transaction: CLOCK_01 advances every block,
     /// so any privacy proof that captures it in `public_pre_states`
     /// becomes stale the moment the next block fires. A CPU-bound real
-    /// STARK takes minutes — many blocks — so the proof fails to
+    /// STARK takes minutes - many blocks - so the proof fails to
     /// verify with `InvalidPrivacyPreservingProof` (sequencer's
     /// reconstruction uses *current* CLOCK_01 ≠ what the proof
     /// committed). Dropping CLOCK_01 from the proof side removes that
@@ -238,7 +238,7 @@ pub enum Instruction {
 pub const MINIMUM_LIQUIDITY: u128 = 1_000;
 
 /// Canonical on-chain Clock account (sequencer-updated every block with
-/// `{block_id, timestamp_ms}`). Fixed well-known id — exactly 32 bytes.
+/// `{block_id, timestamp_ms}`). Fixed well-known id - exactly 32 bytes.
 /// Threaded read-only into the mutating AMM instructions so the on-chain
 /// price oracle uses on-chain time (design.md §5.11③).
 pub const CLOCK_01: AccountId = AccountId::new(*b"/LEZ/ClockProgramAccount/0000001");
@@ -277,7 +277,7 @@ pub struct PoolDefinition {
     /// ATA-routed instructions (`SwapExact{Input,Output}Ata`, `AddLiquidityAta`)
     /// assert the submitter's `ata_program_id` equals this, so the user leg
     /// cannot be dispatched to a substitute (e.g. no-op) program that skips the
-    /// real `token::Transfer` deposit while the vault still pays out — draining
+    /// real `token::Transfer` deposit while the vault still pays out - draining
     /// the pool. A default (all-zero) value means "no ATA program pinned": such
     /// pools (`NewDefinition`-created) reject ATA ops, which is fail-closed and
     /// safe.
@@ -303,7 +303,7 @@ pub struct PoolDefinition {
     //     the fee implicitly via invariant growth; cum_fees_{a,b} records
     //     the explicit fee taken off the input. ---
     /// Lifetime cumulative throughput of token A across all swaps (input
-    /// side or output side — the swap input is in one token, the output
+    /// side or output side - the swap input is in one token, the output
     /// in the other; this tracks `swap_amount_in` when token A is input,
     /// and `swap_amount_out` when token A is output).
     pub cum_volume_a: u128,
@@ -321,10 +321,10 @@ impl PoolDefinition {
     /// reserves are mutated by a swap/liquidity op (Uniswap invariant:
     /// the cumulative integrates the price that held over the elapsed
     /// interval). Idempotent within a block (dt==0 ⇒ no-op). Wrapping
-    /// arithmetic — readers recover deltas via modular subtraction.
+    /// arithmetic - readers recover deltas via modular subtraction.
     ///
     /// Precision/scale requirement: reserves < 2^64 (Q64.64 headroom in u128).
-    /// Enforced at runtime below — `reserve << 64` would otherwise silently wrap
+    /// Enforced at runtime below - `reserve << 64` would otherwise silently wrap
     /// in the release guest (overflow-checks off) and corrupt the cumulative
     /// price. Realistic reserves are far below this bound, so the guard never
     /// fires in practice; it fails closed if the assumption is ever violated.
@@ -341,7 +341,7 @@ impl PoolDefinition {
         // A reserve >= 2^64 would overflow the `<< 64` below (the release guest
         // has overflow-checks off, so it would silently wrap and corrupt the
         // cumulative price). Do NOT panic here: oracle_update runs on every
-        // swap, so a panic would BRICK the pool — once reserves grow past the
+        // swap, so a panic would BRICK the pool - once reserves grow past the
         // Q64.64 domain, every swap would revert permanently. Instead skip this
         // oracle interval (advance the timestamp without accumulating). Trading
         // continues; only the price observation for this one window is dropped.
@@ -401,7 +401,7 @@ pub fn amm_exact_input_out(
 }
 
 /// Apply a completed swap's token movements to the pool's reserve, volume,
-/// and fee accumulators — the single source of truth for the post-state
+/// and fee accumulators - the single source of truth for the post-state
 /// pool math shared by every swap site (public, ATA, and private/
 /// disposable). For a token-A-in swap `deposit_a == swap_amount_in` and
 /// `withdraw_b == swap_amount_out` (the other two are 0); symmetric for
@@ -693,7 +693,7 @@ mod oracle_tests {
 
     #[test]
     fn gapless_twap_across_long_offline_gap() {
-        // Two observations far apart still yield exact average price —
+        // Two observations far apart still yield exact average price -
         // the integral lives on-chain, so an offline reader loses no info.
         let mut p = pool(1_000, 3_000); // price A in B = 3.0
         p.block_ts_last = 0;

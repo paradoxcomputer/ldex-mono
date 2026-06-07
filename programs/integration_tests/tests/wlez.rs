@@ -11,7 +11,7 @@
 //!   - The chained native transfer + chained Mint compose correctly under
 //!     `validate_execution` (no panic, balances conserved).
 //!   - Vault PDA authorisation works for the native release in Unwrap.
-//!   - Wrap/Unwrap is a round-trip — user's native balance is fully
+//!   - Wrap/Unwrap is a round-trip - user's native balance is fully
 //!     restored after a Wrap→Unwrap cycle, definition.total_supply ends
 //!     at zero, vault.balance ends at zero.
 
@@ -130,7 +130,7 @@ fn vault_account_with(balance: u128) -> Account {
 // definition created, user has a 0-balance WLEZ holding, user_native
 // pre-funded with `USER_INITIAL_NATIVE` LEZ. Skipping Initialize via
 // `force_insert_account` is the pragmatic way to test Wrap/Unwrap
-// without also re-deriving the bootstrap admin's signer plumbing — the
+// without also re-deriving the bootstrap admin's signer plumbing - the
 // shape of Initialize is exercised by the unit tests in
 // `programs/wlez/src/tests.rs`.
 fn state_post_initialize() -> V03State {
@@ -167,7 +167,7 @@ fn token_holding_balance(state: &V03State, id: AccountId) -> u128 {
 // with one AccountWithMetadata per Message.accounts entry, so the
 // guest's `initialize` arg count MUST match the FFI's Message account
 // count (5: vault, definition, init_holding, reference_token_def,
-// payer). A mismatch silently rejects the tx at the sequencer — rc=0
+// payer). A mismatch silently rejects the tx at the sequencer - rc=0
 // from the FFI but vault/def stay uninitialised on chain. This test
 // exercises a real Initialize through the zkVM so a future regression
 // surfaces immediately rather than during a live bootstrap.
@@ -179,7 +179,7 @@ fn wlez_initialize_creates_definition_and_claims_vault() {
         &[(user_id(), USER_INITIAL_NATIVE)], vec![], 0);
     deploy_programs(&mut state);
     // Pre-insert the reference token def (any token-program-owned
-    // definition will do — Initialize reads program_owner from it to
+    // definition will do - Initialize reads program_owner from it to
     // find the token program id).
     state.force_insert_account(ref_def_id(), reference_token_definition_account());
     // Derive the PDA-init-holding id so we can reference it in the message.
@@ -396,7 +396,7 @@ fn wlez_wrap_then_unwrap_restores_native_balance() {
         )
         .expect("unwrap must succeed");
 
-    // User's native balance is back to where it started — 1:1 wrap means
+    // User's native balance is back to where it started - 1:1 wrap means
     // no value leaks, and there are no fees on the wrap/unwrap path.
     assert_eq!(
         state.get_account_by_id(user_id()).balance,
@@ -425,7 +425,7 @@ fn wlez_wrap_then_unwrap_restores_native_balance() {
 #[test]
 fn wlez_unwrap_rejects_when_vault_under_collateralised() {
     // This is the safety net the unit tests already pin at the
-    // pure-function level — re-pinning at the zkVM level confirms the
+    // pure-function level - re-pinning at the zkVM level confirms the
     // panic propagates as a failed tx (rather than e.g. silently
     // succeeding and breaking the conservation invariant).
     let mut state = state_post_initialize();

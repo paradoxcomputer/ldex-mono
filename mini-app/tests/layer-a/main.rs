@@ -1,4 +1,4 @@
-//! Layer A — plugin/FFI integration tests for the LDEX mini-app.
+//! Layer A - plugin/FFI integration tests for the LDEX mini-app.
 //!
 //! Calls every FFI function that an LdexCorePlugin Q_INVOKABLE relies on,
 //! using args derived from a live bootstrap.env, and asserts the JSON
@@ -7,9 +7,9 @@
 //! chain/FFI-side data bug.
 //!
 //! Reproductions inline for two reported bugs:
-//!   • "Pool A/B at the selected tier shows no pool in UI" — covered by
+//!   • "Pool A/B at the selected tier shows no pool in UI" - covered by
 //!     `pools_lists_seeded_pool` and `pool_info_for_a_b_fee5`.
-//!   • "Shield doesn't work" — covered by `shield_moves_balance` which
+//!   • "Shield doesn't work" - covered by `shield_moves_balance` which
 //!     asserts HOLD/PRIV deltas after a real STARK round-trip.
 //!
 //! Layer A doesn't drive QML; it isolates "did the data layer return the
@@ -38,7 +38,7 @@ extern "C" {
         from: *const u8, to: *const u8, amount: u128, out_tx: *mut u8) -> i32;
 }
 
-// wallet_ffi — used by the plugin for PrivateOwned balance reads (local cache).
+// wallet_ffi - used by the plugin for PrivateOwned balance reads (local cache).
 #[repr(C)]
 struct WalletHandle { _opaque: [u8; 0] }
 #[repr(C)]
@@ -46,7 +46,7 @@ struct FfiBytes32 { data: [u8; 32] }
 
 // FfiAccount mirrors wallet_ffi.h. data is a borsh-encoded TokenHolding for
 // shielded token accounts: [tag=0(Fungible), def_id(32), balance(u128 LE)].
-// FfiProgramId is 32 bytes (8 × u32), not 8 — getting this wrong shifts
+// FfiProgramId is 32 bytes (8 × u32), not 8 - getting this wrong shifts
 // every later field and `data` becomes a garbage pointer.
 #[repr(C)]
 struct FfiProgramId { data: [u32; 8] }
@@ -152,7 +152,7 @@ fn parse_hex(h: &str) -> [u8; 32] {
 
 fn env_or_fail(k: &str) -> String {
     env::var(k).unwrap_or_else(|_| {
-        eprintln!("FAIL: env var {k} not set — source scripts/bootstrap.env first");
+        eprintln!("FAIL: env var {k} not set - source scripts/bootstrap.env first");
         std::process::exit(2);
     })
 }
@@ -230,8 +230,8 @@ struct TestResult {
 fn test_pool_info_for_a_b_fee5(c: &Ctx) -> TestResult {
     // Plugin's `poolInfoFor(defA, defB, 5)` MUST return exists:true with
     // non-zero reserves. (Reproduces the "pool not shown in UI" report.)
-    // Reserves can be any value — bootstrap seeds 100000/100000, swaps
-    // shift them — so we only assert >0, not >= the seed amount.
+    // Reserves can be any value - bootstrap seeds 100000/100000, swaps
+    // shift them - so we only assert >0, not >= the seed amount.
     let t0 = Instant::now();
     let p = pool_info(c, &c.def_a, &c.def_b, 5);
     let exists = p.get("exists").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -250,7 +250,7 @@ fn test_pools_lists_seeded_pool(c: &Ctx) -> TestResult {
     // Reconstructs what the plugin's `pools()` Q_INVOKABLE returns: all
     // pairs × all 4 tiers. The TOKENA/TOKENB fee=5 row MUST exist with
     // exists:true. (If this passes but the UI still hides it, the bug
-    // is in QML render — Layer B catches that.)
+    // is in QML render - Layer B catches that.)
     let t0 = Instant::now();
     let mut a_b_fee5_exists = false;
     let mut total_existing = 0;
@@ -345,7 +345,7 @@ fn test_priv_a_token_balance_correct(c: &Ctx) -> TestResult {
     // THE bug behind "shielding doesn't work in the UI":
     // The plugin's walletTokens reads private balances via
     // wallet_ffi_get_balance(is_public=false), which returns the *native
-    // LEZ* balance of the account — NOT the token balance held in the
+    // LEZ* balance of the account - NOT the token balance held in the
     // private account's `data` field. For a Token::Fungible PrivateOwned
     // account, native LEZ is always 0, so the UI always displays 0
     // regardless of how many tokens are shielded.
@@ -370,7 +370,7 @@ fn test_wrong_api_returns_native_lez(c: &Ctx) -> TestResult {
     // private account's `data` field. The plugin originally used this
     // API for private TOKEN balances → UI always showed 0. This test
     // asserts the documented behaviour of the WRONG API: returns 0 (or
-    // some other LEZ figure) — not the token balance. If this ever
+    // some other LEZ figure) - not the token balance. If this ever
     // starts returning >=100_000 the wallet FFI semantics changed and
     // the plugin can revert to the simpler API.
     let t0 = Instant::now();
@@ -385,7 +385,7 @@ fn test_wrong_api_returns_native_lez(c: &Ctx) -> TestResult {
     }
 }
 
-// Removed: test_priv_a_wallet_cache_matches_chain — superseded by
+// Removed: test_priv_a_wallet_cache_matches_chain - superseded by
 // test_wrong_api_returns_native_lez. The original test ran the OLD
 // (buggy) API and asserted it should return the token balance; that
 // was a "fail to prove the bug exists" framing. The new test asserts
@@ -422,7 +422,7 @@ fn test_env_shape() -> TestResult {
 fn main() {
     let do_mutate = env::var("LAYER_A_MUTATE").ok().as_deref() == Some("1");
 
-    println!("LDEX Layer A — plugin/FFI integration");
+    println!("LDEX Layer A - plugin/FFI integration");
     println!("  bootstrap.env:    {}", env::var("LDEX_WALLET_CONFIG").unwrap_or_else(|_| "<unset>".into()));
     println!("  sequencer:        {}", env::var("LDEX_SEQUENCER_ADDR").unwrap_or_else(|_| "<unset>".into()));
     println!("  mutating tests:   {} (set LAYER_A_MUTATE=1 to enable)", if do_mutate { "ON" } else { "off" });
@@ -432,7 +432,7 @@ fn main() {
 
     results.push(test_env_shape());
 
-    // Bail early if env shape is broken — chain queries would all fail.
+    // Bail early if env shape is broken - chain queries would all fail.
     if !results[0].pass {
         print_summary(&results);
         std::process::exit(1);

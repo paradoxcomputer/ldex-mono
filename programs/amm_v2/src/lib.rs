@@ -1,10 +1,10 @@
-//! amm_v2 combined private-swap program — orchestration + AMM math
+//! amm_v2 combined private-swap program - orchestration + AMM math
 //! inlined into one chained-call program, for all three disposable-
 //! swap variants (token↔token, LEZ→token, token→LEZ).
 //!
 //! amm_v2's standard ops (NewDefinition, AddLiquidity, RemoveLiquidity,
 //! SwapExactInput, SwapExactInputCircuit) delegate to the canonical
-//! `amm_program` crate parameterised by amm_v2's `self_program_id` —
+//! `amm_program` crate parameterised by amm_v2's `self_program_id` -
 //! so pools/vaults/LP-tokens derive under amm_v2 and amm_v2 owns them.
 //!
 //! The DisposableSwap / DisposableSwapNativeIn / DisposableSwapNativeOut
@@ -31,7 +31,7 @@ use token_core::{Instruction as TokenInstruction, TokenDefinition, TokenHolding}
 use wlez_core::Instruction as WlezInstruction;
 
 /// Apply a signed balance delta to a Fungible token holding (same
-/// shift_balance pattern as `private_swap_router::shift_balance` —
+/// shift_balance pattern as `private_swap_router::shift_balance` -
 /// used to construct each chained call's pre-state reflecting the
 /// running state diff from prior chained calls in the same proof).
 fn shift_balance(
@@ -61,7 +61,7 @@ fn shift_balance(
 }
 
 /// Apply the same pool-reserve update as `SwapExactInputCircuit` (no
-/// oracle update — drift-free pre-state set). Returns the updated
+/// oracle update - drift-free pre-state set). Returns the updated
 /// `PoolDefinition` ready to be re-serialised into `pool.account.data`.
 /// Thin wrapper over the shared `amm_core::apply_swap_to_pool_def` (single
 /// source of truth for the reserve/fee/accumulator math).
@@ -289,7 +289,7 @@ pub fn disposable_swap_native_in(
 
     let mut chained_calls = Vec::with_capacity(4);
 
-    // 1) WLEZ::Wrap — drains user_native, mints WLEZ into a_wlez_holding.
+    // 1) WLEZ::Wrap - drains user_native, mints WLEZ into a_wlez_holding.
     //    WLEZ internally chains auth_transfer + token::Mint.
     chained_calls.push(ChainedCall::new(
         wlez_program_id,
@@ -475,7 +475,7 @@ pub fn disposable_swap_native_out(
         .with_pda_seeds(vec![vault_out_seed]),
     );
 
-    // 4) WLEZ::Unwrap — burns a_wlez_holding by out_amount, releases
+    // 4) WLEZ::Unwrap - burns a_wlez_holding by out_amount, releases
     //    native LEZ to user_native. The first chained-call pre-state
     //    for a_wlez_holding must reflect the running balance (it was
     //    credited by `out_amount` in step 3).
@@ -507,11 +507,11 @@ pub fn disposable_swap_native_out(
 }
 
 /// Create a new amm_v2 pool with the user's initial LP minted into
-/// their deterministic `ATA(owner, lp_def)` (RFP Func #8 — LP holding
+/// their deterministic `ATA(owner, lp_def)` (RFP Func #8 - LP holding
 /// side). Token deposits go via canonical `token::Transfer` from the
 /// user's keypair `user_holding_a/b` (the ATA `Transfer` chained call
 /// requires the recipient to be an already-initialised TokenHolding,
-/// which the brand-new vaults are not — only `token::Transfer` with a
+/// which the brand-new vaults are not - only `token::Transfer` with a
 /// vault-PDA seed lawfully initialises the vaults via the same flow
 /// canonical `new_definition` uses).
 #[expect(clippy::too_many_arguments, reason = "fixed protocol account list")]
@@ -610,7 +610,7 @@ pub fn new_definition_ata(
     );
     let user_lp = initial_lp - MINIMUM_LIQUIDITY;
 
-    // Pool post-state (amm_v2 skips on-chain oracle — block_ts_last=0).
+    // Pool post-state (amm_v2 skips on-chain oracle - block_ts_last=0).
     let pool_post_def = PoolDefinition {
         definition_token_a_id,
         definition_token_b_id,
@@ -642,7 +642,7 @@ pub fn new_definition_ata(
         )),
     );
 
-    // Chained calls — same shape as canonical NewDefinition: the two
+    // Chained calls - same shape as canonical NewDefinition: the two
     // user-side deposits go through `token::Transfer` with a vault
     // PDA-seed (the brand-new vaults start default, only token's
     // PDA-claim path lawfully initialises them).
@@ -705,14 +705,14 @@ pub fn new_definition_ata(
     // initialised, so chaining `ata::Create` here works.
     //
     // Drop `is_authorized` on the lp_def metadata passed to ATA::
-    // Create — `call_lp_def` already claimed lp_def via `Claim::Pda`,
+    // Create - `call_lp_def` already claimed lp_def via `Claim::Pda`,
     // and ATA::Create returns `AccountPostState::new(token_def…)`
     // with no claim of its own. Leaving `is_authorized=true` on this
     // call's input drives `InconsistentAccountAuthorization` against
     // the merged post-state (input says authorised, no chained-call
     // post-state actually claims it here). Owner is touched ONLY by
-    // this chained call — the token::Transfer drains above don't
-    // carry owner — so the owner authorisation stays consistent.
+    // this chained call - the token::Transfer drains above don't
+    // carry owner - so the owner authorisation stays consistent.
     let mut lp_def_for_ata_create = pool_lp_after_lock.clone();
     lp_def_for_ata_create.is_authorized = false;
     let call_ata_lp_create = ChainedCall::new(
@@ -722,7 +722,7 @@ pub fn new_definition_ata(
     );
 
     // After ata::Create, ata_lp is a Fungible TokenHolding owned by
-    // the token program — token::Mint can credit it.
+    // the token program - token::Mint can credit it.
     let mut ata_lp_after_create = ata_lp.clone();
     ata_lp_after_create.account.program_owner = token_program_id;
     ata_lp_after_create.account.data = Data::from(
@@ -788,7 +788,7 @@ pub fn remove_liquidity_ata(
     assert!(owner.is_authorized, "owner must sign remove_liquidity_ata");
     // SECURITY: the ATA program must match the one pinned at pool creation. The
     // ATA address checks below bind ata_in/out to this id, but binding alone is
-    // not enough — a substitute program the attacker controls could no-op the
+    // not enough - a substitute program the attacker controls could no-op the
     // burn/return while the vault still pays out. Pinning closes that.
     assert_eq!(
         ata_program_id, pool_def_data.ata_program_id,
@@ -878,7 +878,7 @@ pub fn remove_liquidity_ata(
 
     let token_program_id = vault_a.account.program_owner;
 
-    // 1) ata::Burn — drain ata_lp by remove_amount; owner authorises.
+    // 1) ata::Burn - drain ata_lp by remove_amount; owner authorises.
     // lp_def passed with is_authorized=false: ATA::Burn returns
     // `AccountPostState::new(token_def.account.clone())` (no claim),
     // and the pool already holds lp_def authorised by the parent
@@ -1052,12 +1052,12 @@ mod tests {
     // ---- WLEZ-side fixtures (for the native-variant disposable swaps) -----
     //
     // The native handlers derive `wlez_program_id` from `wlez_vault`'s owner
-    // and `token_program_id` from `wlez_definition`'s owner — they never call
+    // and `token_program_id` from `wlez_definition`'s owner - they never call
     // the WLEZ PDA helpers, so synthetic ids suffice. The only binding the
     // handler enforces is `wlez_definition.account_id == pool's WLEZ side`.
 
     /// A plain native account (owned by the native-transfer program, not a
-    /// token holding) — models `user_native`.
+    /// token holding) - models `user_native`.
     fn native_account(account_id: AccountId, balance: u128) -> AccountWithMetadata {
         let account = Account {
             program_owner: NATIVE_ID,
@@ -1068,7 +1068,7 @@ mod tests {
         AccountWithMetadata::new(account, false, account_id)
     }
 
-    /// The WLEZ vault PDA account (WLEZ-program owned — its owner is read as
+    /// The WLEZ vault PDA account (WLEZ-program owned - its owner is read as
     /// `wlez_program_id`).
     fn wlez_vault(account_id: AccountId) -> AccountWithMetadata {
         let account = Account {
@@ -1080,7 +1080,7 @@ mod tests {
         AccountWithMetadata::new(account, false, account_id)
     }
 
-    /// The WLEZ token-definition account (token-program owned — its owner is
+    /// The WLEZ token-definition account (token-program owned - its owner is
     /// read as `token_program_id` and its id is matched against the pool's
     /// WLEZ side).
     fn wlez_definition(account_id: AccountId) -> AccountWithMetadata {
@@ -1142,7 +1142,7 @@ mod tests {
             matches!(decode_token(&calls[0]), TokenInstruction::Transfer { amount_to_transfer } if amount_to_transfer == swap_in),
         );
 
-        // 2) Vault deposit: a_in pre-state MUST reflect the running diff — it was
+        // 2) Vault deposit: a_in pre-state MUST reflect the running diff - it was
         //    credited by `swap_in` in call 1 before being drained here.
         assert_eq!(calls[1].pre_states[0].account_id, a_holding_a.account_id);
         assert_eq!(
@@ -1207,7 +1207,7 @@ mod tests {
     /// Regression for the FFI vault/holding mis-ordering bug: a caller
     /// who supplies the pair in the REVERSE of the pool's canonical leg
     /// order (token B first) must align the (vault, a-holding) legs before
-    /// dispatch — otherwise `vault_a` resolves to vault(token_b) and the
+    /// dispatch - otherwise `vault_a` resolves to vault(token_b) and the
     /// handler panics on `vault_a.account_id == pool_def.vault_a_id`. This
     /// mirrors exactly what `pool_needs_leg_flip` + the per-site swap now do
     /// in `ldex-amm-ffi` (and `ldex_amm_v2_disposable_swap`). The pool's
@@ -1325,7 +1325,7 @@ mod tests {
         // Four calls, in order: Wrap, vault-in, vault-out, reshield.
         assert_eq!(calls.len(), 4, "Wrap/vault-in/vault-out/reshield");
 
-        // 1) WLEZ::Wrap — account order per wlez_core::Instruction::Wrap docs:
+        // 1) WLEZ::Wrap - account order per wlez_core::Instruction::Wrap docs:
         //    [user_native, vault, definition, user(=a_wlez) holding].
         assert_eq!(calls[0].program_id, WLEZ_ID, "Wrap runs on the WLEZ program");
         assert_eq!(calls[0].pre_states[0].account_id, user_native.account_id);
@@ -1337,7 +1337,7 @@ mod tests {
             matches!(decode_wlez(&calls[0]), WlezInstruction::Wrap { amount } if amount == swap_in),
         );
 
-        // 2) Vault deposit: a_wlez pre-state MUST reflect the running diff — it
+        // 2) Vault deposit: a_wlez pre-state MUST reflect the running diff - it
         //    was credited by `swap_in` by the Wrap mint before being drained.
         assert_eq!(calls[1].program_id, TOKEN_ID);
         assert_eq!(calls[1].pre_states[0].account_id, a_wlez.account_id);
@@ -1454,7 +1454,7 @@ mod tests {
             matches!(decode_token(&calls[0]), TokenInstruction::Transfer { amount_to_transfer } if amount_to_transfer == swap_in),
         );
 
-        // 2) Vault deposit: a_in pre-state MUST reflect the running diff — it
+        // 2) Vault deposit: a_in pre-state MUST reflect the running diff - it
         //    was credited by `swap_in` in call 1 before being drained here.
         assert_eq!(calls[1].pre_states[0].account_id, a_in.account_id);
         assert_eq!(
@@ -1477,7 +1477,7 @@ mod tests {
             matches!(decode_token(&calls[2]), TokenInstruction::Transfer { amount_to_transfer } if amount_to_transfer == out_amount),
         );
 
-        // 4) WLEZ::Unwrap — account order per wlez_core::Instruction::Unwrap
+        // 4) WLEZ::Unwrap - account order per wlez_core::Instruction::Unwrap
         //    docs: [user(=a_wlez) holding, definition, vault, user_native].
         //    a_wlez pre-state reflects the running diff (credited by `out_amount`
         //    in call 3) before the burn.
@@ -1603,7 +1603,7 @@ mod tests {
             }
             _ => panic!("call 0 must be NewFungibleDefinition"),
         }
-        // call 1: ata::Create(owner, lp_def, ata_lp) — BEFORE the Mint, so the
+        // call 1: ata::Create(owner, lp_def, ata_lp) - BEFORE the Mint, so the
         // ATA exists as a Fungible holding tied to lp_def when Mint runs.
         assert_eq!(calls[1].program_id, ATA_ID);
         assert!(matches!(decode_ata(&calls[1]), ata_core::Instruction::Create));
@@ -1652,7 +1652,7 @@ mod tests {
             ATA_ID,
         );
 
-        // Pool supply drops by exactly the removed amount — in lockstep with the
+        // Pool supply drops by exactly the removed amount - in lockstep with the
         // LP burned below (no drift between pool bookkeeping and LP token).
         assert_eq!(
             pool_supply(&rpost[0]),
