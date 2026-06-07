@@ -23,6 +23,8 @@ mod wlez {
         init_holding: AccountWithMetadata,
         reference_token_def: AccountWithMetadata,
         payer: AccountWithMetadata,
+        token_program_id: nssa_core::program::ProgramId,
+        native_program_id: nssa_core::program::ProgramId,
     ) -> SpelResult {
         let (post_states, chained_calls) = wlez_program::initialize::initialize(
             vault,
@@ -31,6 +33,8 @@ mod wlez {
             reference_token_def,
             payer,
             ctx.self_program_id,
+            token_program_id,
+            native_program_id,
         );
         Ok(spel_framework::SpelOutput::execute(post_states, chained_calls))
     }
@@ -63,9 +67,11 @@ mod wlez {
     /// Burn `amount` WLEZ from the user's holding and release `amount`
     /// native LEZ from the vault back to the user's native account.
     /// The burn is authorised by the user's tx signature on
-    /// `user_holding`; the native release is authorised by this program
-    /// via `with_pda_seeds(wlez_vault_seed)` on the chained native
-    /// transfer.
+    /// `user_holding`; the native release is performed by WLEZ mutating
+    /// the vault and user_native balances directly in its own
+    /// post-states (WLEZ is both the executing program and the vault
+    /// owner, so the vault balance decrease is permitted by
+    /// validate_execution rule 5) - no chained native transfer is used.
     #[instruction]
     pub fn unwrap(
         ctx: ProgramContext,

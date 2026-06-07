@@ -116,12 +116,18 @@ fn user_holding_init_with(balance: u128) -> Account {
     }
 }
 
-// Pre-claimed vault (after a successful Initialize run).
+// Pre-claimed vault (after a successful Initialize run): Initialize records
+// the pinned native/authenticated-transfer program id in the vault's data so
+// Wrap can authorise its native-transfer leg against it.
 fn vault_account_with(balance: u128) -> Account {
     Account {
         program_owner: wlez_program_id(),
         balance,
-        data: Data::default(),
+        data: Data::try_from(
+            wlez_core::encode_program_id(&nssa::program::Program::authenticated_transfer_program().id())
+                .to_vec(),
+        )
+        .expect("32-byte native id fits in Data"),
         nonce: Nonce(0),
     }
 }
@@ -203,7 +209,10 @@ fn wlez_initialize_creates_definition_and_claims_vault() {
             user_id(),    // payer / signer
         ],
         vec![current_nonce(&state, user_id())],
-        Instruction::Initialize,
+        Instruction::Initialize {
+            token_program_id: token_program_id(),
+            native_program_id: nssa::program::Program::authenticated_transfer_program().id(),
+        },
     )
     .unwrap();
     let witness = public_transaction::WitnessSet::for_message(&message, &[&user_key()]);

@@ -168,7 +168,14 @@ pub unsafe extern "C" fn ldex_wlez_initialize(
             wlez_pid,
             vec![vault_id, def_id, init_holding_id, ref_id, payer_id],
             nonces,
-            Instruction::Initialize,
+            Instruction::Initialize {
+                // Pin the canonical token + native programs so a malicious
+                // reference/native account can't redirect WLEZ accounting or
+                // mint unbacked WLEZ (Wrap checks user_native against the
+                // native id stored in the vault at Initialize).
+                token_program_id: nssa::program::Program::token().id(),
+                native_program_id: nssa::program::Program::authenticated_transfer_program().id(),
+            },
         )
         .map_err(|_| LDEX_AMM_ERR_SUBMIT)?;
         let witness_set =
