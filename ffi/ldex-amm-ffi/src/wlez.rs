@@ -19,13 +19,46 @@ use nssa_core::account::AccountId;
 use sequencer_service_rpc::RpcClient as _;
 use wallet::WalletCore;
 use wlez_core::{
-    get_wlez_definition_id, get_wlez_init_holding_id, get_wlez_vault_id, Instruction,
+    decode_program_id, get_wlez_definition_id, get_wlez_init_holding_id, get_wlez_vault_id,
+    Instruction,
 };
 
 use crate::{
     program_id_from_bytes, read_id, write_id, LDEX_AMM_ERR_ACCOUNT, LDEX_AMM_ERR_KEY,
     LDEX_AMM_ERR_NULL, LDEX_AMM_ERR_SUBMIT, LDEX_AMM_ERR_UTF8, LDEX_AMM_ERR_WALLET, LDEX_AMM_OK,
 };
+
+/// Participant-side WLEZ pin (mirrors the lpad SDK `wlez_programs_checked`):
+/// refuse to wrap/unwrap against a WLEZ whose definition token program or vault
+/// native id is non-canonical. WLEZ `Initialize` is permissionless and the guest
+/// cannot know the canonical image ids (they are host-computed), so a front-run
+/// could pin a malicious token program (owning the WLEZ definition) or a no-op
+/// native program (recorded in the vault) and then mint unbacked WLEZ. The
+/// canonical ids ARE known here, so gate before committing real LEZ - this
+/// downgrades a front-run from a vault drain to a recoverable DoS. Returns
+/// `LDEX_AMM_ERR_ACCOUNT` on a non-canonical pin or an unreadable WLEZ account.
+async fn wlez_pins_are_canonical(
+    wallet: &WalletCore,
+    vault_id: AccountId,
+    def_id: AccountId,
+) -> Result<(), i32> {
+    let def_acc = wallet
+        .get_account_public(def_id)
+        .await
+        .map_err(|_| LDEX_AMM_ERR_ACCOUNT)?;
+    if def_acc.program_owner != nssa::program::Program::token().id() {
+        return Err(LDEX_AMM_ERR_ACCOUNT);
+    }
+    let vault_acc = wallet
+        .get_account_public(vault_id)
+        .await
+        .map_err(|_| LDEX_AMM_ERR_ACCOUNT)?;
+    let pinned_native = decode_program_id(vault_acc.data.as_ref()).ok_or(LDEX_AMM_ERR_ACCOUNT)?;
+    if pinned_native != nssa::program::Program::authenticated_transfer_program().id() {
+        return Err(LDEX_AMM_ERR_ACCOUNT);
+    }
+    Ok(())
+}
 
 unsafe fn c_str(p: *const c_char) -> Option<String> {
     if p.is_null() {
@@ -254,6 +287,9 @@ pub unsafe extern "C" fn ldex_wlez_wrap(
             None,
         )
         .map_err(|_| LDEX_AMM_ERR_WALLET)?;
+        // Refuse to escrow real LEZ into a WLEZ whose token/native pin is not
+        // canonical (mirrors the lpad SDK wlez_programs_checked).
+        wlez_pins_are_canonical(&wallet, vault_id, def_id).await?;
         // Only signer is the user's native account.
         let signers = [user_id];
         let nonces = wallet
@@ -344,6 +380,9 @@ pub unsafe extern "C" fn ldex_wlez_unwrap(
             None,
         )
         .map_err(|_| LDEX_AMM_ERR_WALLET)?;
+        // Refuse to release real LEZ from a WLEZ whose token/native pin is not
+        // canonical (mirrors the lpad SDK wlez_programs_checked).
+        wlez_pins_are_canonical(&wallet, vault_id, def_id).await?;
         // Only signer is the user's WLEZ holding.
         let signers = [user_holding_id];
         let nonces = wallet
