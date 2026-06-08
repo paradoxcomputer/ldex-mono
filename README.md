@@ -347,7 +347,8 @@ Constant-product math at 30 bps fees holds on every swap.
 
 The production path is **GPU/TEE-attested outsourced proving** -
 either Boundless / Bonsai via `BONSAI_API_URL` (no protocol change)
-or the LEZ-native Psychopomp marketplace (see `psychopomp/` - operator
+or the LEZ-native Psychopomp marketplace, which now lives in its own
+repository at https://github.com/paradoxcomputer/psychopomp (operator
 economic loop already shipped on a dedicated sequencer). Either backend
 drops mode-1 / mode-2 / native-batched proofs from CPU 12-25 min to
 ~1-2 min on a GPU/TEE prover. The proof *is* the privacy; it can be
